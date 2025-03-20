@@ -16,6 +16,7 @@ from utils.util import *
 from pydantic_model.req_body import *
 import random
 from datetime import datetime, timedelta
+from jose import JWTError, jwt
 
 
 # Load environment variables
@@ -83,6 +84,20 @@ except Exception as e:
 @app.post("/register_user")
 async def register_user(profile: Profile):
     try:
+        existing_user = profile_collection.find_one({
+            "$or": [
+                {"email": profile.email},
+                {"email2": profile.email2},
+                {"phone": profile.phone},
+                {"phone2": profile.phone2},
+                {"linkedin": profile.linkedin},
+                {"github": profile.github}
+            ]
+        })
+
+        if existing_user:
+            raise HTTPException(status_code=409, detail="User already exists!")
+
         profile_data = profile.dict()
 
         # Insert into MongoDB
@@ -96,6 +111,10 @@ async def register_user(profile: Profile):
                 "profile": profile_data
             }
         )
+    except HTTPException as http_exc:
+        # Re-raise FastAPI's HTTP exceptions (like 409)
+        raise http_exc
+    
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": f"Error inserting profile: {str(e)}"})
     
@@ -189,36 +208,39 @@ async def verify_otp(veryfy_otp:Veryfy_OTP):
 
 
 # Download - Resume
-@app.get("/download-resume/{profile_id}")
-async def download_resume(profile_id: str):
-    try:
-        obj_id = ObjectId(profile_id)
-    except InvalidId:
-        raise HTTPException(status_code=400, detail="Invalid profile_id. Must be a valid ObjectId.")
+@app.post("/download-resume")
+async def download_resume(payload: DownloadResume):
+    email = payload.email
+    print(email, "email")
+    profile = profile_collection.find_one({"email": email})
 
-    profile = profile_collection.find_one({"_id": obj_id})
+    print(profile, "profile")
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    resume_file_id = profile.get("resume_file_id")
-    if not resume_file_id:
+    # Get the resume Base64 data
+    resume_base64 = profile.get("resume_name")
+    if not resume_base64:
         raise HTTPException(status_code=404, detail="Resume not found for this profile")
 
+    # Decode Base64 to binary
     try:
-        grid_out = fs.get(ObjectId(resume_file_id))
-        return StreamingResponse(
-            io.BytesIO(grid_out.read()),
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={grid_out.filename}"}
-        )
+        resume_bytes = base64.b64decode(resume_base64)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving resume: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to decode resume: {str(e)}")
+
+    # Return PDF file as response
+    return StreamingResponse(
+        io.BytesIO(resume_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={profile.get('full_name', 'resume')}.pdf"}
+    )
+
 
 
 # Admin - Login
 @app.post("/admin_login")
 async def admin_login(admin: Admin):
-
     if not admin.email or not admin.password:
         raise HTTPException(status_code=400, detail="email or password missing.")
 
@@ -230,18 +252,27 @@ async def admin_login(admin: Admin):
     if admin.password != admin_user.get("password"):
         raise HTTPException(status_code=401, detail="Invalid password.")
 
-    # Success! You can return admin data (avoid returning passwords)
-    admin_user["_id"] = str(admin_user["_id"])  # Convert ObjectId to string for JSON serialization
-    admin_user.pop("password", None)  # Remove password before sending response
+    # Convert MongoDB ObjectId to str
+    admin_user["_id"] = str(admin_user["_id"])
+
+
+    admin_user.pop("password", None)
+    
+    token_data = {
+        "sub": admin_user["_id"],
+        "email": admin.email
+    }
+    access_token = create_access_token(data=token_data)
 
     return JSONResponse(
         status_code=200,
         content={
-            "message": "✅ Successfully logged in.",
-            "data": admin_user
+            "message": "Successfully logged in.",
+            "access_token": access_token,
+            "token_type": "bearer",
+            "admin_data": admin_user
         }
     )
-
 
 
 if __name__ == "__main__":

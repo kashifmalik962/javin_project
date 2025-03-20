@@ -6,11 +6,15 @@ from typing import Optional
 class Profile(BaseModel):
     full_name: str
     email: EmailStr
+    email2: EmailStr
     phone: str
+    phone2: str
     country: str
+    address: Optional[str] = None
+    resume_name: Optional[str] = None
+    linkedin: Optional[str] = None
     current_city: Optional[str] = None
     preferred_city: Optional[str] = None
-    linkedin: Optional[str] = None
     summary_of_profile: Optional[str] = None
     college_background: Optional[str] = None
     current_organization: Optional[str] = None
@@ -22,7 +26,6 @@ class Profile(BaseModel):
     github: Optional[str] = None
     leetcode: Optional[str] = None
     codechef: Optional[str] = None
-    resume_name: Optional[str] = None
 
 
 
@@ -37,3 +40,7 @@ class Send_Otp_Number(BaseModel):
 class Veryfy_OTP(BaseModel):
     phone: str
     otp: str
+
+class DownloadResume(BaseModel):
+    email: str
+
