@@ -2,6 +2,9 @@ env/
 
 # Environment variables ignore
 .env
+**/.env
+*.env
+**/*.env
 
 # Logs ignore
 *.log

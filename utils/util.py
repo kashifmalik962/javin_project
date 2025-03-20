@@ -15,6 +15,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
+print(ALGORITHM, type(ALGORITHM))
+
 
 # Send Watsapp message
 def send_watsapp_message(phone,otp_code):
@@ -83,6 +85,6 @@ def create_access_token(data: dict):
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
     to_encode.update({"exp": expire})
-
+    print(ALGORITHM, type(ALGORITHM))
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
