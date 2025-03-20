@@ -25,7 +25,7 @@ app = FastAPI()
 
 # MongoDB connection
 MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik962:gYxgUGO6622a1cRr@cluster0.aad1d.mongodb.net/node_mongo_crud?")
-DATABASE_NAME = os.getenv("DATABASE_NAME")
+DATABASE_NAME = os.getenv("DATABASE_NAME", "student_profile")
 PORT = int(os.getenv("PORT", 8000))
 
 
