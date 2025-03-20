@@ -4,17 +4,16 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+load_dotenv(env_path)
 
 account_sid = os.getenv("TWILIO_ACCOUNT_SID")
 auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 
+
 def send_watsapp_message(phone,otp_code):
     try:
-        account_sid = account_sid
-        auth_token = auth_token
         client = Client(account_sid, auth_token)
-
 
         message = client.messages.create(
             from_='whatsapp:+14155238886',  # Twilio Sandbox number
@@ -51,19 +50,13 @@ def dencode_base64(password):
 
 def send_sms_message(phone,otp_code):
     try:
-        account_sid = account_sid
-        auth_token = auth_token
         client = Client(account_sid, auth_token)
-
-
         message = client.messages.create(
-            from_='+19378073103',
+            from_='+15124123378',
             body=f'{otp_code} is your verification code. For your security, do not share this code.',
             to=f'+91{phone}'
         )
-        
         print(message.sid)
         return {"status": "ok", "message": "Sucessfully message sent on sms."}
     except:
         return {"status": "fail", "message": "Failed to sent message on sms."}
-    

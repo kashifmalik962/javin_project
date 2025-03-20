@@ -44,62 +44,65 @@ except Exception as e:
 
 # Register - Student
 @app.post("/register_user")
-async def register_user(
-    profile: str = Form(...),
-    resume: Optional[UploadFile] = File(None)
-):
-    print("Register user endpoint triggered...")
+# async def register_user(profile: Profile):
+#     print("Register user endpoint triggered...")
 
-    # Parse JSON
+#     profile_data = profile.dict()
+
+#     if profile.resume:
+#         try:
+#             # ✅ Decode Base64 resume
+#             resume_bytes = base64.b64decode(profile.resume)
+#             file_id = fs.put(resume_bytes, filename="resume.pdf", content_type="application/pdf")
+#             print(f"✅ Resume saved to GridFS: {file_id}")
+#             profile_data["resume_file_id"] = str(file_id)
+#             del profile_data["resume"]  # ✅ Remove base64 string after storing
+#         except Exception as e:
+#             raise HTTPException(status_code=500, detail=f"Error saving resume: {str(e)}")
+
+#     try:
+#         result = profile_collection.insert_one(profile_data)
+#         print(f"✅ Inserted ID: {result.inserted_id}")
+
+#         created_profile = profile_collection.find_one({"_id": result.inserted_id})
+
+#         if created_profile:
+#             created_profile["_id"] = str(created_profile["_id"])
+#             if "resume_file_id" in created_profile:
+#                 created_profile["resume_file_id"] = str(created_profile["resume_file_id"])
+
+#             return {
+#                 "message": "Profile created successfully with resume stored in GridFS!",
+#                 "profile": created_profile
+#             }
+#         else:
+#             raise HTTPException(status_code=500, detail="Profile not found after insert")
+
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Error inserting profile: {str(e)}")
+@app.post("/register_user")
+async def register_user(profile: Profile):
     try:
-        profile_dict = json.loads(profile)
-        profile_obj = Profile(**profile_dict)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid profile data: {str(e)}")
+        profile_data = profile.dict()
 
-    profile_data = profile_obj.dict()
-
-    if resume:
-        try:
-            resume_bytes = await resume.read()
-            file_id = fs.put(resume_bytes, filename=resume.filename, content_type=resume.content_type)
-            print(f"✅ Resume saved to GridFS: {file_id}")
-            profile_data["resume_file_id"] = str(file_id)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"GridFS error: {str(e)}")
-
-    try:
-        # print(f"Inserting into DB: {profile_data}")
+        # Insert into MongoDB
         result = profile_collection.insert_one(profile_data)
-        print(f"✅ Inserted ID: {result.inserted_id}")
-
-        created_profile = profile_collection.find_one({"_id": result.inserted_id})
-
-        if created_profile:
-            print(f"✅ Retrieved profile: {created_profile}")
-        else:
-            print("Profile not found after insert")
-
-        created_profile["_id"] = str(created_profile["_id"])
-        if "resume_file_id" in created_profile:
-            created_profile["resume_file_id"] = str(created_profile["resume_file_id"])
+        profile_data["_id"] = str(result.inserted_id)
 
         return JSONResponse(
             status_code=201,
             content={
-                "message": "Profile created successfully with resume stored in GridFS!",
-                "profile": created_profile
+                "message": "Profile created successfully!",
+                "profile": profile_data
             }
         )
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error inserting profile: {str(e)}")
-
-
+        return JSONResponse(status_code=500, content={"detail": f"Error inserting profile: {str(e)}"})
+    
 
 # Send OTP to the user
 @app.post("/student/send_otp_watsappp")
-async def send_otp_watsapp(phone: str):
+async def send_otp_watsapp(phone: Send_Otp_Number):
     if not phone:
         raise HTTPException(status_code=400, detail="Phone number is required")
 
@@ -107,7 +110,7 @@ async def send_otp_watsapp(phone: str):
     otp_code = random.randint(100000, 999999)
 
     otp_data = {
-        "phone": phone,
+        "phone": phone.phone,
         "otp": encode_base64(str(otp_code)),
         "expires_at": datetime.utcnow() + timedelta(minutes=5)  # OTP valid for 5 minutes
     }
@@ -115,11 +118,11 @@ async def send_otp_watsapp(phone: str):
     # Save to MongoDB (example: otp_collection)
     otp_collection.insert_one(otp_data)
     try:
-        send_watsapp_message(phone,otp_code)
-        print(f"✅ OTP for {phone} is {otp_code} (Simulated send via WhatsApp)")
+        send_watsapp_message(phone.phone,otp_code)
+        print(f"✅ OTP for {phone.phone} is {otp_code} (Simulated send via WhatsApp)")
         return JSONResponse(
         status_code=200,
-        content={"message": f"✅ OTP sent to {phone} via WhatsApp"}
+        content={"message": f"✅ OTP sent to {phone.phone} via WhatsApp"}
     )
     except:
         return JSONResponse(status_code=500, context={"message":"Internal server err watsapp issue"})
@@ -127,7 +130,7 @@ async def send_otp_watsapp(phone: str):
 
 # Send OTP to the user
 @app.post("/student/send_otp_sms")
-async def send_otp_sms(phone: str):
+async def send_otp_sms(phone: Send_Otp_Number):
     if not phone:
         raise HTTPException(status_code=400, detail="Phone number is required")
 
@@ -135,7 +138,7 @@ async def send_otp_sms(phone: str):
     otp_code = random.randint(100000, 999999)
 
     otp_data = {
-        "phone": phone,
+        "phone": phone.phone,
         "otp": encode_base64(str(otp_code)),
         "expires_at": datetime.utcnow() + timedelta(minutes=5)  # OTP valid for 5 minutes
     }
@@ -143,11 +146,11 @@ async def send_otp_sms(phone: str):
     # Save to MongoDB (example: otp_collection)
     otp_collection.insert_one(otp_data)
     try:
-        send_sms_message(phone,otp_code)
-        print(f"✅ OTP for {phone} is {otp_code} (Simulated send via SMS)")
+        send_sms_message(phone.phone,otp_code)
+        print(f"✅ OTP for {phone.phone} is {otp_code} (Simulated send via SMS)")
         return JSONResponse(
         status_code=200,
-        content={"message": f"✅ OTP sent to {phone} via SMS"}
+        content={"message": f"✅ OTP sent to {phone.phone} via SMS"}
     )
     except:
         return JSONResponse(status_code=500, context={"message":"Internal server err watsapp issue"})
@@ -155,11 +158,11 @@ async def send_otp_sms(phone: str):
 
 
 @app.post("/student/verify-otp")
-async def verify_otp(phone: str, otp: str):
-    if not phone or not otp:
+async def verify_otp(veryfy_otp:Veryfy_OTP):
+    if not veryfy_otp.phone or not veryfy_otp.otp:
         raise HTTPException(status_code=400, detail="Phone and OTP are required")
 
-    otp_record = otp_collection.find_one({"phone": phone, "otp": encode_base64(otp)})
+    otp_record = otp_collection.find_one({"phone": veryfy_otp.phone, "otp": encode_base64(veryfy_otp.otp)})
 
     if not otp_record:
         raise HTTPException(status_code=401, detail="Invalid OTP")
@@ -170,7 +173,7 @@ async def verify_otp(phone: str, otp: str):
     # Clean up OTP record after successful verification
     otp_collection.delete_one({"_id": otp_record["_id"]})
 
-    student = profile_collection.find_one({"phone": phone})
+    student = profile_collection.find_one({"phone": veryfy_otp.phone})
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
