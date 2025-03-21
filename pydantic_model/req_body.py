@@ -45,5 +45,5 @@ class Veryfy_OTP(BaseModel):
     otp: str
 
 class DownloadResume(BaseModel):
-    email: str
+    student_id: int
 

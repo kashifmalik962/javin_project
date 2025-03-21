@@ -17,6 +17,7 @@ from pydantic_model.req_body import *
 import random
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorGridFSBucket
 
 
 # Load environment variables
@@ -31,9 +32,10 @@ PORT = int(os.getenv("PORT", 8000))
 
 
 try:
-    client = MongoClient(MONGO_DETAILS)
+    client = AsyncIOMotorClient(MONGO_DETAILS, maxPoolSize=100)
+    database: AsyncIOMotorDatabase = client[DATABASE_NAME]
     database = client[DATABASE_NAME]
-    fs = gridfs.GridFS(database)
+    fs = AsyncIOMotorGridFSBucket(database)
     profile_collection = database["profiles"]
     otp_collection = database["otp_collection"]
     admin_collection = database["admin"]
@@ -43,65 +45,27 @@ except Exception as e:
 
 
 
-# Register - Student
-# @app.post("/register_user")
-# async def register_user(profile: Profile):
-#     print("Register user endpoint triggered...")
-
-#     profile_data = profile.dict()
-
-#     if profile.resume:
-#         try:
-#             # ✅ Decode Base64 resume
-#             resume_bytes = base64.b64decode(profile.resume)
-#             file_id = fs.put(resume_bytes, filename="resume.pdf", content_type="application/pdf")
-#             print(f"✅ Resume saved to GridFS: {file_id}")
-#             profile_data["resume_file_id"] = str(file_id)
-#             del profile_data["resume"]  # ✅ Remove base64 string after storing
-#         except Exception as e:
-#             raise HTTPException(status_code=500, detail=f"Error saving resume: {str(e)}")
-
-#     try:
-#         result = profile_collection.insert_one(profile_data)
-#         print(f"✅ Inserted ID: {result.inserted_id}")
-
-#         created_profile = profile_collection.find_one({"_id": result.inserted_id})
-
-#         if created_profile:
-#             created_profile["_id"] = str(created_profile["_id"])
-#             if "resume_file_id" in created_profile:
-#                 created_profile["resume_file_id"] = str(created_profile["resume_file_id"])
-
-#             return {
-#                 "message": "Profile created successfully with resume stored in GridFS!",
-#                 "profile": created_profile
-#             }
-#         else:
-#             raise HTTPException(status_code=500, detail="Profile not found after insert")
-
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error inserting profile: {str(e)}")
-
-
-
 # Register - User
 @app.post("/register_student")
 async def register_student(student: RegisterStudent):
-    if profile_collection.find_one({"email": student.email}):
+    if await profile_collection.find_one({"$or": [{"email": student.email}, {"phone": student.phone}]}):
         raise HTTPException(status_code=409, detail="student already exists.")
     
-    all_users = list(profile_collection.find({}))
-    student_id = len(all_users) + 1
+    print("+++++++++++++")
+    
+    last_student = await profile_collection.find_one({}, sort=[("student_id", -1)])
+    student_id = 101 if last_student is None else last_student["student_id"] + 1
 
     # Convert Pydantic model to dictionary
     student_data = student.model_dump()
     student_data["student_id"] = student_id
 
     print(student_data, "student_data +++++++++")
-    inserted_id = profile_collection.insert_one(student_data).inserted_id
+    result = await profile_collection.insert_one(student_data)
+    inserted_id = result.inserted_id
 
     print(inserted_id, "inserted_id +++++++++")
-    created_profile = profile_collection.find_one({"_id": inserted_id}, {"_id": 0})
+    created_profile = await profile_collection.find_one({"_id": inserted_id}, {"_id": 0})
 
     print(created_profile, "created_profile +++++++++")
     return JSONResponse(status_code=201, content={
@@ -122,12 +86,12 @@ async def update_user(student_id: int, request: Request, profile: Profile):
         print(profile, "profile")
 
         # Check if the user exists
-        existing_user = profile_collection.find_one({"student_id": student_id})
+        existing_user = await profile_collection.find_one({"student_id": student_id})
         if not existing_user:
             raise HTTPException(status_code=404, detail="User does not exist!")
 
         # Update only the provided fields
-        result = profile_collection.update_one(
+        result = await profile_collection.update_one(
             {"student_id": student_id},
             {"$set": profile}
         )
@@ -147,6 +111,53 @@ async def update_user(student_id: int, request: Request, profile: Profile):
         return JSONResponse(status_code=500, content={"detail": f"Error updating profile: {str(e)}"})
     
 
+# PATCH - UPDATE STUDENT REACORD
+@app.patch("/update_user/{student_id}")
+async def update_user(student_id: int, request: Request):
+    try:
+        profile_updates: Dict[str, Any] = await request.json()  # Get JSON data
+
+        if not profile_updates:
+            raise HTTPException(status_code=400, detail="Request body cannot be empty.")
+
+        print(profile_updates, "profile_updates")
+
+        # Check if the user exists
+        existing_user = await profile_collection.find_one({"student_id": student_id})
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User does not exist!")
+
+        # Remove fields with `None` values (ignores missing fields)
+        profile_updates = {k: v for k, v in profile_updates.items() if v is not None}
+
+        if not profile_updates:  # If no valid fields remain
+            raise HTTPException(status_code=400, detail="No valid fields provided for update.")
+
+        # Update only the provided fields
+        result = await profile_collection.update_one(
+            {"student_id": student_id},
+            {"$set": profile_updates}
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(status_code=400, detail="No changes made to the profile.")
+
+        # Fetch updated user data
+        updated_user = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
+
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Profile updated successfully!", "profile": updated_user}
+        )
+
+    except HTTPException as http_exc:
+        raise http_exc  # Pass through FastAPI exceptions
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": f"Error updating profile: {str(e)}"})
+    
+    
+
 # Send OTP to the user
 @app.post("/student/send_otp_watsappp")
 async def send_otp_watsapp(phone: Send_Otp_Number):
@@ -163,13 +174,13 @@ async def send_otp_watsapp(phone: Send_Otp_Number):
     }
 
     # Save to MongoDB (example: otp_collection)
-    otp_collection.insert_one(otp_data)
+    await otp_collection.insert_one(otp_data)
     try:
         send_watsapp_message(phone.phone,otp_code)
-        print(f"✅ OTP for {phone.phone} is {otp_code} (Simulated send via WhatsApp)")
+        print(f"OTP for {phone.phone} is {otp_code} (Simulated send via WhatsApp)")
         return JSONResponse(
         status_code=200,
-        content={"message": f"✅ OTP sent to {phone.phone} via WhatsApp"}
+        content={"message": f"OTP sent to {phone.phone} via WhatsApp"}
     )
     except:
         return JSONResponse(status_code=500, context={"message":"Internal server err watsapp issue"})
@@ -191,7 +202,7 @@ async def send_otp_sms(phone: Send_Otp_Number):
     }
 
     # Save to MongoDB (example: otp_collection)
-    otp_collection.insert_one(otp_data)
+    await otp_collection.insert_one(otp_data)
     try:
         send_sms_message(phone.phone,otp_code)
         print(f"✅ OTP for {phone.phone} is {otp_code} (Simulated send via SMS)")
@@ -209,7 +220,7 @@ async def verify_otp(veryfy_otp:Veryfy_OTP):
     if not veryfy_otp.phone or not veryfy_otp.otp:
         raise HTTPException(status_code=400, detail="Phone and OTP are required")
 
-    otp_record = otp_collection.find_one({"phone": veryfy_otp.phone, "otp": encode_base64(veryfy_otp.otp)})
+    otp_record = await otp_collection.find_one({"phone": veryfy_otp.phone, "otp": encode_base64(veryfy_otp.otp)})
 
     if not otp_record:
         raise HTTPException(status_code=401, detail="Invalid OTP")
@@ -218,9 +229,9 @@ async def verify_otp(veryfy_otp:Veryfy_OTP):
         raise HTTPException(status_code=401, detail="OTP has expired")
 
     # Clean up OTP record after successful verification
-    otp_collection.delete_one({"_id": otp_record["_id"]})
+    await otp_collection.delete_one({"_id": otp_record["_id"]})
 
-    student = profile_collection.find_one({"phone": veryfy_otp.phone})
+    student = await profile_collection.find_one({"phone": veryfy_otp.phone})
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
@@ -238,9 +249,9 @@ async def verify_otp(veryfy_otp:Veryfy_OTP):
 # Download - Resume
 @app.post("/download-resume")
 async def download_resume(payload: DownloadResume):
-    email = payload.email
-    print(email, "email")
-    profile = profile_collection.find_one({"email": email})
+    student_id = payload.student_id
+    print(student_id, "student_id")
+    profile = await profile_collection.find_one({"student_id": student_id})
 
     print(profile, "profile")
     if not profile:
@@ -272,7 +283,7 @@ async def admin_login(admin: Admin):
     if not admin.email or not admin.password:
         raise HTTPException(status_code=400, detail="email or password missing.")
 
-    admin_user = admin_collection.find_one({"email": admin.email})
+    admin_user = await admin_collection.find_one({"email": admin.email})
 
     if not admin_user:
         raise HTTPException(status_code=404, detail="Admin user not found.")
