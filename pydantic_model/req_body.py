@@ -32,6 +32,11 @@ class RegisterStudent(BaseModel):
     email: str
     phone: str
 
+
+class LoginStudent(BaseModel):
+    email: str
+    phone: str
+
 class Admin(BaseModel):
     email: str
     password: str

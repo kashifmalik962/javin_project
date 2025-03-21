@@ -18,7 +18,8 @@ import random
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorGridFSBucket
-
+from auth.auth import router as auth_router
+from fastapi.middleware.cors import CORSMiddleware
 
 # Load environment variables
 load_dotenv()
@@ -29,6 +30,15 @@ app = FastAPI()
 MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik962:gYxgUGO6622a1cRr@cluster0.aad1d.mongodb.net/node_mongo_crud?")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "student_profile")
 PORT = int(os.getenv("PORT", 8000))
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 try:
@@ -71,6 +81,51 @@ async def register_student(student: RegisterStudent):
     return JSONResponse(status_code=201, content={
         "message": "Successfully Registered Student.",
         "data": created_profile
+    })
+
+
+# Login - Student 
+@app.post("/login_student")
+async def login_student(login_student:LoginStudent):
+    print(login_student, "login_student")
+    profile_details =  await profile_collection.find_one(
+        {"email":login_student.email, "phone":login_student.phone},
+        {"_id": 0, "email":1, "phone":1})
+    
+    print(profile_details, "profile_details ----->")
+    if not profile_details:
+        raise HTTPException(status_code=404, detail="student does not exists.")
+    
+    print(profile_details, "profile_details")
+
+    token_data = {
+        "sub": profile_details["email"],
+        "student_id": profile_details.get("student_id"),
+        "phone": profile_details["phone"]
+    }
+
+    access_token = create_access_token(data=token_data)
+    
+    return JSONResponse(status_code=200, content={
+        "message": "Successfully logged in.",
+        "access_token": access_token,
+        "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
+        "token_type": "bearer",
+        "data": profile_details
+    })
+
+
+# GET - STUDENT DETAILS
+@app.get("/get_student/{student_id}")
+async def get_student(student_id: int):
+    student_details = await profile_collection.find_one({"student_id":student_id}, {"_id": 0, "resume_name":0})
+
+    if not student_details:
+        raise HTTPException(status_code=404, detail="students does not exists.")
+
+    return JSONResponse(status_code=200, content={
+        "message": "successfully data recieved.",
+        "data": student_details
     })
 
 
@@ -314,6 +369,10 @@ async def admin_login(admin: Admin):
         }
     )
 
+
+
+# Include authentication routes
+app.include_router(auth_router)
 
 if __name__ == "__main__":
     import uvicorn
