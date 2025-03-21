@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 
 
 # Profile Model
@@ -26,11 +26,18 @@ class Profile(BaseModel):
     github: Optional[str] = None
     leetcode: Optional[str] = None
     codechef: Optional[str] = None
+    sub_student_id: List[int] = None
 
 
 class RegisterStudent(BaseModel):
     email: str
     phone: str
+
+
+class RegisterSubStudent(BaseModel):
+    email: str
+    phone: str
+    parent_id: int
 
 
 class LoginStudent(BaseModel):
