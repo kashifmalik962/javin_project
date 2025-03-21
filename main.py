@@ -1,8 +1,8 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from pymongo import MongoClient
 from bson import ObjectId
-from typing import Optional
+from typing import Optional, Dict, Any
 import logging
 from dotenv import load_dotenv
 import os
@@ -44,7 +44,7 @@ except Exception as e:
 
 
 # Register - Student
-@app.post("/register_user")
+# @app.post("/register_user")
 # async def register_user(profile: Profile):
 #     print("Register user endpoint triggered...")
 
@@ -81,42 +81,70 @@ except Exception as e:
 
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=f"Error inserting profile: {str(e)}")
-@app.post("/register_user")
-async def register_user(profile: Profile):
+
+
+
+# Register - User
+@app.post("/register_student")
+async def register_student(student: RegisterStudent):
+    if profile_collection.find_one({"email": student.email}):
+        raise HTTPException(status_code=409, detail="student already exists.")
+    
+    all_users = list(profile_collection.find({}))
+    student_id = len(all_users) + 1
+
+    # Convert Pydantic model to dictionary
+    student_data = student.model_dump()
+    student_data["student_id"] = student_id
+
+    print(student_data, "student_data +++++++++")
+    inserted_id = profile_collection.insert_one(student_data).inserted_id
+
+    print(inserted_id, "inserted_id +++++++++")
+    created_profile = profile_collection.find_one({"_id": inserted_id}, {"_id": 0})
+
+    print(created_profile, "created_profile +++++++++")
+    return JSONResponse(status_code=201, content={
+        "message": "Successfully Registered Student.",
+        "data": created_profile
+    })
+
+
+# Update - User
+@app.put("/update_user/{student_id}")
+async def update_user(student_id: int, request: Request, profile: Profile):
     try:
-        existing_user = profile_collection.find_one({
-            "$or": [
-                {"email": profile.email},
-                {"email2": profile.email2},
-                {"phone": profile.phone},
-                {"phone2": profile.phone2},
-                {"linkedin": profile.linkedin},
-                {"github": profile.github}
-            ]
-        })
+        profile: Dict[str, Any] = await request.json()  # JSON body ko dict me convert karein
 
-        if existing_user:
-            raise HTTPException(status_code=409, detail="User already exists!")
+        if not profile:
+            raise HTTPException(status_code=400, detail="Request body cannot be empty.")
 
-        profile_data = profile.dict()
+        print(profile, "profile")
 
-        # Insert into MongoDB
-        result = profile_collection.insert_one(profile_data)
-        profile_data["_id"] = str(result.inserted_id)
+        # Check if the user exists
+        existing_user = profile_collection.find_one({"student_id": student_id})
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User does not exist!")
+
+        # Update only the provided fields
+        result = profile_collection.update_one(
+            {"student_id": student_id},
+            {"$set": profile}
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(status_code=400, detail="No changes made to the profile.")
 
         return JSONResponse(
-            status_code=201,
-            content={
-                "message": "Profile created successfully!",
-                "profile": profile_data
-            }
+            status_code=200,
+            content={"message": "Profile updated successfully!", "profile": profile}
         )
+
     except HTTPException as http_exc:
-        # Re-raise FastAPI's HTTP exceptions (like 409)
-        raise http_exc
-    
+        raise http_exc  # Pass through FastAPI exceptions
+
     except Exception as e:
-        return JSONResponse(status_code=500, content={"detail": f"Error inserting profile: {str(e)}"})
+        return JSONResponse(status_code=500, content={"detail": f"Error updating profile: {str(e)}"})
     
 
 # Send OTP to the user
@@ -269,6 +297,7 @@ async def admin_login(admin: Admin):
         content={
             "message": "Successfully logged in.",
             "access_token": access_token,
+            "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
             "token_type": "bearer",
             "admin_data": admin_user
         }

@@ -28,6 +28,9 @@ class Profile(BaseModel):
     codechef: Optional[str] = None
 
 
+class RegisterStudent(BaseModel):
+    email: str
+    phone: str
 
 class Admin(BaseModel):
     email: str
