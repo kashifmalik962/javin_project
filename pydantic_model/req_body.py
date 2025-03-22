@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Union
 
 
 # Profile Model
@@ -59,3 +59,14 @@ class Veryfy_OTP(BaseModel):
 class DownloadResume(BaseModel):
     student_id: int
 
+
+                            # ACTIVITY PATH MODULE
+
+class ActivityPathModule(BaseModel):
+    activity_name: Optional[str] = None
+    description: Optional[str] = None
+    type: Optional[str] = None
+    question: Optional[str] = None
+    answer: Optional[Union[List[str], str]] = None
+    correct_answer: Optional[str] = None
+    mark: Optional[int] = None

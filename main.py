@@ -18,13 +18,31 @@ import random
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorGridFSBucket
-from auth.auth import router as auth_router
+from auth.google_auth import router as auth_router
 from fastapi.middleware.cors import CORSMiddleware
+
+from fastapi.responses import RedirectResponse
+import httpx
+from fastapi.templating import Jinja2Templates
+
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI()
+templates = Jinja2Templates(directory="templates")
+
+# LinkedIn OAuth Config
+CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")  
+CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")  
+REDIRECT_URI = "http://localhost:8000/auth/linkedin/callback"
+AUTHORIZATION_URL = "https://www.linkedin.com/oauth/v2/authorization"
+TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
+USER_INFO_URL = "https://api.linkedin.com/v2/userinfo"
+
+# OAuth Scopes
+SCOPES = "openid profile email"
+
 
 # MongoDB connection
 MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik962:gYxgUGO6622a1cRr@cluster0.aad1d.mongodb.net/node_mongo_crud?")
@@ -50,10 +68,60 @@ try:
     sub_student_profiles = database["sub_student_profiles"]
     otp_collection = database["otp_collection"]
     admin_collection = database["admin"]
+    # Activity - Path - Module
+    activity_path_collection = database["activity_path_collection"]
     print("Connected to MongoDB successfully!")
 except Exception as e:
     logging.error(f"Failed to connect to MongoDB. Error: {e}")
 
+
+
+# Signup With LinkedIn
+@app.get("/auth/linkedin")
+async def linkedin_login():
+    """Step 1: Redirect user to LinkedIn login page"""
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "scope": SCOPES
+    }
+    auth_url = f"{AUTHORIZATION_URL}?{'&'.join([f'{k}={v}' for k, v in params.items()])}"
+    return RedirectResponse(auth_url)
+
+@app.get("/auth/linkedin/callback")
+async def linkedin_callback(request: Request):
+    """Step 2: Handle LinkedIn OAuth Callback"""
+    code = request.query_params.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Authorization code not found")
+
+    async with httpx.AsyncClient() as client:
+        # Step 3: Exchange Authorization Code for Access Token
+        token_data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+        }
+        token_response = await client.post(TOKEN_URL, data=token_data)
+        token_json = token_response.json()
+
+        if "access_token" not in token_json:
+            raise HTTPException(status_code=400, detail="Failed to obtain access token")
+
+        access_token = token_json["access_token"]
+
+        # Step 4: Fetch User Info
+        headers = {"Authorization": f"Bearer {access_token}"}
+        user_response = await client.get(USER_INFO_URL, headers=headers)
+        user_data = user_response.json()
+
+        # Print User Data to Terminal
+        print("🔹 LinkedIn User Data:", user_data)
+
+        return {"message": "Login successful!", "user": user_data}
 
 
 # Register - User
@@ -517,6 +585,45 @@ async def sub_student_update_user(student_id: int, request: Request):
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": f"Error updating profile: {str(e)}"})
 
+
+
+                                # ACTIVITY PATH MODULE
+
+@app.post("/activity_path_module")
+async def create_activity(activity_path: ActivityPathModule):
+    try:
+        if await activity_path_collection.find_one(
+            {"$or": [
+                {"question": activity_path.question}
+                ]
+            }):
+            raise HTTPException(status_code=409, detail="question already exists.")
+        
+        # Get the last unique_id
+        last_unique = await activity_path_collection.find_one({}, sort=[("unique_id", -1)])
+        unique_id = 101 if last_unique is None else last_unique["unique_id"] + 1
+
+        # Convert Pydantic model to dictionary
+        activity_path_data = activity_path.model_dump()
+        activity_path_data["unique_id"] = unique_id
+
+        # Insert into MongoDB
+        result = await activity_path_collection.insert_one(activity_path_data)
+        inserted_id = result.inserted_id
+
+        # Retrieve the inserted document
+        created_profile = await activity_path_collection.find_one({"_id": inserted_id}, {"_id": 0})
+
+        return JSONResponse(status_code=200, content={
+            "message": "Successfully submitted data",
+            "data": created_profile
+        })
+    
+    except HTTPException as http_exc:
+        raise http_exc  # Pass through FastAPI exceptions
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 # Include authentication routes
