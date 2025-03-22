@@ -76,54 +76,6 @@ except Exception as e:
 
 
 
-# Signup With LinkedIn
-@app.get("/auth/linkedin")
-async def linkedin_login():
-    """Step 1: Redirect user to LinkedIn login page"""
-    params = {
-        "response_type": "code",
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "scope": SCOPES
-    }
-    auth_url = f"{AUTHORIZATION_URL}?{'&'.join([f'{k}={v}' for k, v in params.items()])}"
-    return RedirectResponse(auth_url)
-
-@app.get("/auth/linkedin/callback")
-async def linkedin_callback(request: Request):
-    """Step 2: Handle LinkedIn OAuth Callback"""
-    code = request.query_params.get("code")
-    if not code:
-        raise HTTPException(status_code=400, detail="Authorization code not found")
-
-    async with httpx.AsyncClient() as client:
-        # Step 3: Exchange Authorization Code for Access Token
-        token_data = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": REDIRECT_URI,
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-        }
-        token_response = await client.post(TOKEN_URL, data=token_data)
-        token_json = token_response.json()
-
-        if "access_token" not in token_json:
-            raise HTTPException(status_code=400, detail="Failed to obtain access token")
-
-        access_token = token_json["access_token"]
-
-        # Step 4: Fetch User Info
-        headers = {"Authorization": f"Bearer {access_token}"}
-        user_response = await client.get(USER_INFO_URL, headers=headers)
-        user_data = user_response.json()
-
-        # Print User Data to Terminal
-        print("🔹 LinkedIn User Data:", user_data)
-
-        return {"message": "Login successful!", "user": user_data}
-
-
 # Register - User
 @app.post("/register_student")
 async def register_student(student: RegisterStudent):
@@ -624,6 +576,54 @@ async def create_activity(activity_path: ActivityPathModule):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+
+
+# Signup With LinkedIn
+@app.get("/auth/linkedin")
+async def linkedin_login():
+    """Step 1: Redirect user to LinkedIn login page"""
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "scope": SCOPES
+    }
+    auth_url = f"{AUTHORIZATION_URL}?{'&'.join([f'{k}={v}' for k, v in params.items()])}"
+    return RedirectResponse(auth_url)
+
+@app.get("/auth/linkedin/callback")
+async def linkedin_callback(request: Request):
+    """Step 2: Handle LinkedIn OAuth Callback"""
+    code = request.query_params.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Authorization code not found")
+
+    async with httpx.AsyncClient() as client:
+        # Step 3: Exchange Authorization Code for Access Token
+        token_data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+        }
+        token_response = await client.post(TOKEN_URL, data=token_data)
+        token_json = token_response.json()
+
+        if "access_token" not in token_json:
+            raise HTTPException(status_code=400, detail="Failed to obtain access token")
+
+        access_token = token_json["access_token"]
+
+        # Step 4: Fetch User Info
+        headers = {"Authorization": f"Bearer {access_token}"}
+        user_response = await client.get(USER_INFO_URL, headers=headers)
+        user_data = user_response.json()
+
+        # Print User Data to Terminal
+        print("🔹 LinkedIn User Data:", user_data)
+
+        return {"message": "Login successful!", "user": user_data}
 
 
 # Include authentication routes
