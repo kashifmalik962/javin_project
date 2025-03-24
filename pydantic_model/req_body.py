@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Union
-
+from enum import Enum
 
 # Profile Model
 class Profile(BaseModel):
@@ -30,7 +30,7 @@ class Profile(BaseModel):
 
 
 class RegisterStudent(BaseModel):
-    email: str
+    email: EmailStr
     phone: str
 
 
@@ -62,11 +62,18 @@ class DownloadResume(BaseModel):
 
                             # ACTIVITY PATH MODULE
 
+# Define an Enum for dropdown options
+class QuestionType(str, Enum):
+    mcq = "mcq"
+    text = "text"
+    video = "video"
+
+
 class ActivityPathModule(BaseModel):
     activity_name: Optional[str] = None
     description: Optional[str] = None
-    type: Optional[str] = None
+    question_type: QuestionType
     question: Optional[str] = None
-    answer: Optional[Union[List[str], str]] = None
+    options: Optional[Union[List[str], str]] = None
     correct_answer: Optional[str] = None
     mark: Optional[int] = None

@@ -18,30 +18,16 @@ import random
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorGridFSBucket
-from auth.google_auth import router as auth_router
 from fastapi.middleware.cors import CORSMiddleware
-
-from fastapi.responses import RedirectResponse
-import httpx
 from fastapi.templating import Jinja2Templates
-
+from auth.auth_linkedin import router as linkedin_router
+from auth.auth_google import router as google_router
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
-
-# LinkedIn OAuth Config
-CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")  
-CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")  
-REDIRECT_URI = "http://localhost:8000/auth/linkedin/callback"
-AUTHORIZATION_URL = "https://www.linkedin.com/oauth/v2/authorization"
-TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
-USER_INFO_URL = "https://api.linkedin.com/v2/userinfo"
-
-# OAuth Scopes
-SCOPES = "openid profile email"
 
 
 # MongoDB connection
@@ -578,56 +564,11 @@ async def create_activity(activity_path: ActivityPathModule):
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
-# Signup With LinkedIn
-@app.get("/auth/linkedin")
-async def linkedin_login():
-    """Step 1: Redirect user to LinkedIn login page"""
-    params = {
-        "response_type": "code",
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "scope": SCOPES
-    }
-    auth_url = f"{AUTHORIZATION_URL}?{'&'.join([f'{k}={v}' for k, v in params.items()])}"
-    return RedirectResponse(auth_url)
-
-@app.get("/auth/linkedin/callback")
-async def linkedin_callback(request: Request):
-    """Step 2: Handle LinkedIn OAuth Callback"""
-    code = request.query_params.get("code")
-    if not code:
-        raise HTTPException(status_code=400, detail="Authorization code not found")
-
-    async with httpx.AsyncClient() as client:
-        # Step 3: Exchange Authorization Code for Access Token
-        token_data = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": REDIRECT_URI,
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-        }
-        token_response = await client.post(TOKEN_URL, data=token_data)
-        token_json = token_response.json()
-
-        if "access_token" not in token_json:
-            raise HTTPException(status_code=400, detail="Failed to obtain access token")
-
-        access_token = token_json["access_token"]
-
-        # Step 4: Fetch User Info
-        headers = {"Authorization": f"Bearer {access_token}"}
-        user_response = await client.get(USER_INFO_URL, headers=headers)
-        user_data = user_response.json()
-
-        # Print User Data to Terminal
-        print("🔹 LinkedIn User Data:", user_data)
-
-        return {"message": "Login successful!", "user": user_data}
 
 
-# Include authentication routes
-app.include_router(auth_router)
+# Register Routers
+app.include_router(linkedin_router)
+app.include_router(google_router)
 
 if __name__ == "__main__":
     import uvicorn
