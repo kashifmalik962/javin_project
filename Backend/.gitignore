@@ -1,0 +1,15 @@
+env/
+
+# Environment variables ignore
+.env
+**/.env
+*.env
+**/*.env
+
+# Logs ignore
+*.log
+logs/
+
+# System files ignore (optional)
+.DS_Store
+Thumbs.db
