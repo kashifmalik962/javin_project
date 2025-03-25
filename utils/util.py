@@ -62,6 +62,7 @@ def decode_base64(encoded_password):
     print(f"Decoded string: {decoded_string}")
     return decoded_string
 
+
 def create_access_token(data: dict):
     print(f"Encoding JWT with algorithm: {ALGORITHM}")
     print(f"Encoding JWT with ACCESS_TOKEN_EXPIRE_MINUTES: {ACCESS_TOKEN_EXPIRE_MINUTES}")

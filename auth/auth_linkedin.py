@@ -4,6 +4,9 @@ import json
 import httpx
 from fastapi import APIRouter, Request, HTTPException
 from starlette.responses import RedirectResponse
+from datetime import datetime, timedelta
+import jwt
+from starlette.responses import JSONResponse, RedirectResponse
 
 router = APIRouter()
 
@@ -14,9 +17,18 @@ LINKEDIN_REDIRECT_URI = "https://javin-project.onrender.com/auth/linkedin/callba
 LINKEDIN_AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 LINKEDIN_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 LINKEDIN_USER_INFO_URL = "https://api.linkedin.com/v2/userinfo"
+FRONTEND_REDIRECT_URI = "http://localhost:3000/dashboard"  # ✅ Redirect to frontend
+
 
 # OAuth Scopes
 SCOPES = ["openid", "profile", "email"]
+
+
+# Secret key for JWT
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
+TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+
 
 @router.get("/auth/linkedin")
 async def linkedin_login():
@@ -67,4 +79,26 @@ async def linkedin_callback(request: Request):
         user_data = user_response.json()
 
         print("🔹 LinkedIn User Data:", user_data)
-        return {"message": "Login successful!", "user": user_data}
+
+        # Extract user details
+        name = user_data.get("name")
+        email = user_data.get("email")
+        picture = user_data.get("picture")
+
+        token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+
+        print(user_data.get("sub"), name, email, picture, token_expiry, "++++++++++++")
+        jwt_payload = {
+            "sub": user_data.get("sub"),
+            "name": name,
+            "email": email,
+            "picture": picture,
+            "exp": token_expiry
+        }
+        jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
+
+        # ✅ Redirect to React App with user data
+        # redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}&picture={picture}"
+        # return RedirectResponse(redirect_url)
+
+        return JSONResponse(content={"token": jwt_token, "user": user_data})
