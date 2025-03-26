@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from auth.auth_linkedin import router as linkedin_router
 from auth.auth_google import router as google_router
+import re
 
 # Load environment variables
 load_dotenv()
@@ -302,134 +303,177 @@ async def update_user(student_id: int, request: Request):
 
 
 # Send OTP to the user
-@app.post("/student/send_otp_watsappp")
+@app.post("/student/send_otp_watsapp")
 async def send_otp_watsapp(phone: Send_Otp_Number):
-    if not phone:
-        # raise HTTPException(status_code=400, detail="Phone number is required")
-        return JSONResponse(status_code=400, content={
+    try:
+        phone_number = phone.phone.strip()  # Remove spaces
+
+        # Ensure phone number is not empty
+        if not phone_number:
+            return JSONResponse(status_code=400, content={
                 "message": "Phone number is required.",
                 "status_code": 0
             })
 
-    # Generate 6-digit OTP
-    otp_code = random.randint(100000, 999999)
+        # Regex pattern to extract country code and local number
+        phone_pattern = re.compile(r"^\+?(\d{1,4})?(\d{10})$")  
 
-    otp_data = {
-        "phone": phone.phone,
-        "otp": encode_base64(str(otp_code)),
-        "expires_at": datetime.utcnow() + timedelta(minutes=5)  # OTP valid for 5 minutes
-    }
-
-    # Save to MongoDB (example: otp_collection)
-    await otp_collection.insert_one(otp_data)
-    try:
-        send_watsapp_message(phone.phone,otp_code)
-        print(f"OTP for {phone.phone} is {otp_code} (Simulated send via WhatsApp)")
-        return JSONResponse(status_code=200, content={
-            "message": f"OTP sent to {phone.phone} via WhatsApp",
-            "status_code": 1
-            }
-    )
-    except Exception as e:
-        # return JSONResponse(status_code=500, context={"message":"Internal server err watsapp issue"})
-        return JSONResponse(status_code=500, content={
-                "message": f"Internal server err watsapp issue {e}",
+        match = phone_pattern.match(phone_number)
+        if not match:
+            return JSONResponse(status_code=400, content={
+                "message": "Invalid phone number format. Use correct format (e.g., +919149076448 or +9149076448).",
                 "status_code": 0
             })
+
+        country_code, local_number = match.groups()  
+
+        # Ensure correct local number extraction
+        final_number = local_number if not country_code or country_code == "91" else phone_number[len(country_code) + 1:]
+
+        # Generate 6-digit OTP
+        otp_code = random.randint(100000, 999999)
+
+        otp_data = {
+            "phone": final_number,  # Store only the correct local number
+            "otp": encode_base64(str(otp_code)),
+            "expires_at": datetime.utcnow() + timedelta(minutes=5)  # OTP valid for 5 minutes
+        }
+
+        # Save to MongoDB
+        await otp_collection.insert_one(otp_data)
+        
+        try:
+            send_watsapp_message(final_number, otp_code)  # Send only local number
+            return JSONResponse(status_code=200, content={
+                "message": f"OTP sent to {final_number} via WhatsApp",
+                "status_code": 1
+            })
+        except Exception as e:
+            return JSONResponse(status_code=500, content={
+                "message": f"Internal server error with WhatsApp service: {e}",
+                "status_code": 0
+            })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "message": f"Internal server error: {e}",
+            "status_code": 0
+        })
+    
 
 
 # Send OTP to the user
 @app.post("/student/send_otp_sms")
 async def send_otp_sms(phone: Send_Otp_Number):
-    if not phone:
-        # raise HTTPException(status_code=400, detail="Phone number is required")
-        return JSONResponse(status_code=400, content={
+    try:
+        phone_number = phone.phone.strip()  # Remove spaces
+
+        # Ensure phone number is not empty
+        if not phone_number:
+            return JSONResponse(status_code=400, content={
                 "message": "Phone number is required.",
                 "status_code": 0
-        })
+            })
 
+        # Regex pattern to capture optional country code and 10-digit local number
+        phone_pattern = re.compile(r"^\+?(\d{1,4})?(\d{10})$")  
 
-    # Generate 6-digit OTP
-    otp_code = random.randint(100000, 999999)
+        match = phone_pattern.match(phone_number)
+        if not match:
+            return JSONResponse(status_code=400, content={
+                "message": "Invalid phone number format. Use correct format (e.g., +919149076448 or +9149076448).",
+                "status_code": 0
+            })
 
-    otp_data = {
-        "phone": phone.phone,
-        "otp": encode_base64(str(otp_code)),
-        "expires_at": datetime.utcnow() + timedelta(minutes=5)  # OTP valid for 5 minutes
-    }
+        country_code, local_number = match.groups()  # Extract country code and local number
 
-    # Save to MongoDB (example: otp_collection)
-    await otp_collection.insert_one(otp_data)
-    try:
-        send_sms_message(phone.phone,otp_code)
-        print(f"OTP for {phone.phone} is {otp_code} (Simulated send via SMS)")
-        return JSONResponse(status_code=200, content={
-            "message": f"OTP sent to {phone.phone} via SMS",
-            "status_code": 1
+        # If country code is missing, assume it's an Indian number
+        if not country_code or country_code == "91":
+            final_number = local_number
+        else:
+            final_number = phone_number[len(country_code) + 1:]  # Generic case for other country codes
+
+        # Generate 6-digit OTP
+        otp_code = random.randint(100000, 999999)
+
+        otp_data = {
+            "phone": final_number,  # Store only the correct local number
+            "otp": encode_base64(str(otp_code)),
+            "expires_at": datetime.utcnow() + timedelta(minutes=5)  # OTP valid for 5 minutes
         }
-    )
+
+        # Save to MongoDB (example: otp_collection)
+        await otp_collection.insert_one(otp_data)
+        
+        try:
+            send_sms_message(final_number, otp_code)  # Send only local number
+            return JSONResponse(status_code=200, content={
+                "message": f"OTP sent to {final_number} via SMS",
+                "status_code": 1
+            })
+        except Exception as e:
+            return JSONResponse(status_code=500, content={
+                "message": f"Internal server error with SMS service: {e}",
+                "status_code": 0
+            })
     except Exception as e:
-        # return JSONResponse(status_code=500, context={"message":"Internal server err watsapp issue"})
         return JSONResponse(status_code=500, content={
-            "message": f"Internal server err watsapp issue {e}",
+            "message": f"Internal server error: {e}",
             "status_code": 0
         })
 
 
-
 @app.post("/student/verify-otp")
-async def verify_otp(veryfy_otp:Veryfy_OTP):
+async def verify_otp(veryfy_otp: Veryfy_OTP):
     try:
         if not veryfy_otp.phone or not veryfy_otp.otp:
-            # raise HTTPException(status_code=400, detail="Phone and OTP are required")
             return JSONResponse(status_code=400, content={
                 "message": "Phone and OTP are required",
                 "status_code": 0
             })
 
-        print(veryfy_otp.phone, veryfy_otp.otp, "veryfy_otp.phone or not veryfy_otp.otp")
-        print(type(veryfy_otp.phone), type(veryfy_otp.otp))
-        otp_record = await otp_collection.find_one({"phone": veryfy_otp.phone, "otp": encode_base64(veryfy_otp.otp)})
+        phone_number = veryfy_otp.phone.strip()
 
-        print(otp_record, "otp_record +++")
+        # Regex pattern to extract country code and local number
+        phone_pattern = re.compile(r"^\+?(\d{1,4})?(\d{10})$")  
+        match = phone_pattern.match(phone_number)
+        if not match:
+            return JSONResponse(status_code=400, content={
+                "message": "Invalid phone number format.",
+                "status_code": 0
+            })
+
+        country_code, local_number = match.groups()
+        final_number = local_number if not country_code or country_code == "91" else phone_number[len(country_code) + 1:]
+
+        # Find OTP record in database
+        otp_record = await otp_collection.find_one({"phone": final_number, "otp": encode_base64(veryfy_otp.otp)})
+
         if not otp_record:
-            # raise HTTPException(status_code=401, detail="Invalid OTP")
             return JSONResponse(status_code=401, content={
                 "message": "Invalid OTP",
                 "status_code": 0
             })
 
         if otp_record["expires_at"] < datetime.utcnow():
-            # raise HTTPException(status_code=401, detail="OTP has expired")
             return JSONResponse(status_code=401, content={
                 "message": "OTP has expired",
                 "status_code": 0
             })
 
-        # Clean up OTP record after successful verification
+        # Remove OTP from database after successful verification
         await otp_collection.delete_one({"_id": otp_record["_id"]})
 
-        # student = await profile_collection.find_one({"phone": veryfy_otp.phone})
-        # if not student:
-        #     # raise HTTPException(status_code=404, detail="Student not found")
-        #     return JSONResponse(status_code=404, content={
-        #         "message": "Student not found.",
-        #         "status_code": 0
-        #     })
-
-        # student["_id"] = str(student["_id"])
-
         return JSONResponse(status_code=200, content={
-                "message": "Login successful",
-                "status_code": 1,
-                # "student": student
-            }
-        )
+            "message": "Login successful",
+            "status_code": 1
+        })
+
     except Exception as e:
         return JSONResponse(status_code=500, content={
-            "message": f"Internal server err watsapp issue {e}",
+            "message": f"Internal server error: {e}",
             "status_code": 0
         })
+
 
 # Download - Resume
 @app.post("/download-resume")
