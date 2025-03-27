@@ -11,6 +11,8 @@ from starlette.responses import RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorGridFSBucket
 from datetime import datetime, timedelta
 from bson import ObjectId  # Import to handle MongoDB ObjectId
+from starlette.responses import JSONResponse
+from pymongo import DESCENDING
 
 
 router = APIRouter()
@@ -55,7 +57,7 @@ async def close_mongo_connection():
     global client
     if client:
         client.close()
-        print("❌ MongoDB connection closed.")
+        print("MongoDB connection closed.")
 
 # ✅ FastAPI Startup & Shutdown Events
 @router.on_event("startup")
@@ -100,7 +102,7 @@ async def linkedin_callback(request: Request):
     """Handle LinkedIn OAuth Callback"""
     code = request.query_params.get("code")
     if not code:
-        raise HTTPException(status_code=400, detail="Authorization code not found")
+        raise HTTPException(status_code=200, detail="Authorization code not found")
 
     async with httpx.AsyncClient() as client:
         # 🔹 Exchange Code for Token
@@ -117,10 +119,10 @@ async def linkedin_callback(request: Request):
         try:
             token_json = token_response.json()
         except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail="Invalid response from LinkedIn")
+            raise HTTPException(status_code=200, detail="Invalid response from LinkedIn")
 
         if "access_token" not in token_json:
-            raise HTTPException(status_code=400, detail=f"Failed to get access token: {token_json}")
+            raise HTTPException(status_code=200, detail=f"Failed to get access token: {token_json}")
 
         access_token = token_json["access_token"]
 
@@ -132,40 +134,42 @@ async def linkedin_callback(request: Request):
         print("🔹 LinkedIn User Data:", user_data)
 
         # 🔹 Extract user details
-        linkedin_id = user_data.get("sub")  # Unique LinkedIn user ID
         name = user_data.get("name", "Unknown User")  # Ensure default values
         email = user_data.get("email")
-        picture = user_data.get("picture", "")
 
         if not email:
-            raise HTTPException(status_code=400, detail="Email not found in LinkedIn response")
+            raise HTTPException(status_code=200, detail="Email not found in LinkedIn response")
 
         # 🔹 Check if user exists in DB
         existing_user = await profile_collection.find_one({"email": email})
 
         if existing_user:
-            print("✅ Existing user found")
+            print("Existing user found")
+            user_data = serialize_mongo_document(existing_user)
             token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
 
             jwt_payload = {
-                "sub": existing_user["linkedin_id"],
                 "name": existing_user["name"],
                 "email": existing_user["email"],
                 "exp": token_expiry  # Ensure token expiration
             }
             jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
             
-            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}"
+            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}"
             return RedirectResponse(redirect_url)
+            # return JSONResponse(status_code=200,content={"token": jwt_token, "user": user_data})
+
+
+
+        last_student = await profile_collection.find_one({}, sort=[("student_id", DESCENDING)])
+        student_id = 101 if last_student is None else last_student["student_id"] + 1
 
         # 🔹 If user does not exist, insert new user
         new_user = {
-            "linkedin_id": linkedin_id,  # Ensure linkedin_id is stored
             "name": name,
             "email": email,
-            "picture": picture,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "student_id": student_id,
+            "profile_type": "primary"
         }
         print("✅ Creating new user")
 
@@ -175,15 +179,18 @@ async def linkedin_callback(request: Request):
         new_user_serialized = serialize_mongo_document(new_user)
         token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
 
+        print(new_user_serialized, "new_user_serialized")
         # 🔹 Generate JWT Token for new user
         jwt_payload = {
-            "sub": linkedin_id,
             "name": name,
             "email": email,
             "exp": token_expiry  # Ensure token expiration
         }
         jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
 
+        print(jwt_token, "jwt_token ++")
         # 🔹 Redirect to React App with JWT Token
-        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}&picture={picture}"
+        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}"
         return RedirectResponse(redirect_url)
+        # return JSONResponse(status_code=200, content={"token": jwt_token, "user": new_user_serialized})
+

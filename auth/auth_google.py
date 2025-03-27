@@ -9,6 +9,7 @@ from starlette.responses import JSONResponse, RedirectResponse
 from dotenv import load_dotenv, find_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorGridFSBucket
 from bson import ObjectId  # Import to handle MongoDB ObjectId
+from pymongo import DESCENDING
 
 load_dotenv(find_dotenv(), verbose=True)
 
@@ -93,7 +94,7 @@ async def google_login():
 async def google_callback(request: Request):
     code = request.query_params.get("code")
     if not code:
-        raise HTTPException(status_code=400, detail="Authorization code not found")
+        raise HTTPException(status_code=200, detail="Authorization code not found")
 
     async with httpx.AsyncClient() as client:
         token_data = {
@@ -107,24 +108,24 @@ async def google_callback(request: Request):
         token_response = await client.post(GOOGLE_TOKEN_URL, data=token_data, headers=headers)
 
         if token_response.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to get access token")
+            raise HTTPException(status_code=200, detail="Failed to get access token")
         
         token_json = token_response.json()
         access_token = token_json.get("access_token")
         if not access_token:
-            raise HTTPException(status_code=400, detail="Invalid access token response")
+            raise HTTPException(status_code=200, detail="Invalid access token response")
 
         headers = {"Authorization": f"Bearer {access_token}"}
         user_response = await client.get(GOOGLE_USER_INFO_URL, headers=headers)
         user_data = user_response.json()
 
-        google_id = user_data.get("sub")
+        print("🔹 Google User Data:", user_data)
+
         name = user_data.get("name", "Unknown User")
         email = user_data.get("email")
-        picture = user_data.get("picture", "")
 
         if not email:
-            raise HTTPException(status_code=400, detail="Email not found in Google response")
+            raise HTTPException(status_code=200, detail="Email not found in Google response")
 
         existing_user = await profile_collection.find_one({"email": email})
 
@@ -133,21 +134,26 @@ async def google_callback(request: Request):
             token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
             
             jwt_payload = {
-                "sub": user_data["google_id"],
                 "name": user_data["name"],
                 "email": user_data["email"],
                 "exp": token_expiry  # Ensure expiration time is included
             }
             jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
-            return JSONResponse(content={"token": jwt_token, "user": user_data})
+            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}"
+            return RedirectResponse(redirect_url)
+            # return JSONResponse(status_code=200,content={"token": jwt_token, "user": user_data})
+
+        
+        last_student = await profile_collection.find_one({}, sort=[("student_id", DESCENDING)])
+        student_id = 101 if last_student is None else last_student["student_id"] + 1
 
         new_user = {
-            "google_id": google_id,  # Ensure google_id is stored
             "name": name,
             "email": email,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "student_id": student_id,
+            "profile_type": "primary"
         }
+        print("✅ Creating new user")
 
         result = await profile_collection.insert_one(new_user)
         new_user["_id"] = str(result.inserted_id)  # Convert `_id` to string immediately
@@ -156,13 +162,15 @@ async def google_callback(request: Request):
         token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
 
         jwt_payload = {
-            "sub": google_id,
             "name": name,
             "email": email,
             "exp": token_expiry
         }
+        print(new_user_serialized, "new_user_serialized")
+        
         jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
+        print(jwt_token, "jwt_token ++")
 
-        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}&picture={picture}"
+        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}"
         return RedirectResponse(redirect_url)
-        # return JSONResponse(content={"token": jwt_token, "user": new_user_serialized})
+        # return JSONResponse(status_code=200, content={"token": jwt_token, "user": new_user_serialized})

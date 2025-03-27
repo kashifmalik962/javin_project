@@ -43,7 +43,7 @@ def send_sms_message(phone, otp_code):
     try:
         client = Client(account_sid, auth_token)
         message = client.messages.create(
-            from_='+15124123378',
+            from_='+17257453071',
             body=f'{otp_code} is your verification code. Do not share it.',
             to=f'+91{phone}'
         )
@@ -86,14 +86,14 @@ def validation_number(phone: str) -> str:
     phone_number = phone.strip()  # Remove spaces
 
     if not phone_number:
-        raise HTTPException(status_code=400, detail="Phone number is required.")
+        raise HTTPException(status_code=200, detail="Phone number is required.")
 
     # Ensure the number is purely numeric after removing `+`
     if phone_number.startswith("+"):
         phone_number = phone_number[1:]
 
     if not phone_number.isdigit():
-        raise HTTPException(status_code=400, detail="Phone number should contain only digits.")
+        raise HTTPException(status_code=200, detail="Phone number should contain only digits.")
 
     # Check if the phone number starts with '91' and has a total of 12 digits
     if phone_number.startswith("91") and len(phone_number) == 12:
@@ -103,4 +103,4 @@ def validation_number(phone: str) -> str:
     if len(phone_number) == 10:
         return phone_number
 
-    raise HTTPException(status_code=400, detail="Invalid phone number format. Use a valid 10-digit number.")
+    raise HTTPException(status_code=200, detail="Invalid phone number format. Use a valid 10-digit number.")

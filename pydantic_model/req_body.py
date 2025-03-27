@@ -41,18 +41,17 @@ class RegisterStudent(BaseModel):
 
 
 class RegisterSubStudent(BaseModel):
-    email: str
+    email: EmailStr
     phone: str
     parent_id: int
-    profile_type: RegisterStudentType
 
 
 class LoginStudent(BaseModel):
-    email: str
+    email: EmailStr
     phone: str
 
 class Admin(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 
