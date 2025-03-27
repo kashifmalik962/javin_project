@@ -26,7 +26,13 @@ class Profile(BaseModel):
     github: Optional[str] = None
     leetcode: Optional[str] = None
     codechef: Optional[str] = None
-    sub_student_id: List[int] = None
+    sub_student_id: Optional[List[int]] = []
+
+
+# Profile choice
+class RegisterStudentType(str, Enum):
+    primary = "primary"
+    secondary = "secondary"
 
 
 class RegisterStudent(BaseModel):
@@ -38,6 +44,7 @@ class RegisterSubStudent(BaseModel):
     email: str
     phone: str
     parent_id: int
+    profile_type: RegisterStudentType
 
 
 class LoginStudent(BaseModel):

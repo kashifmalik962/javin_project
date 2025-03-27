@@ -23,6 +23,8 @@ from fastapi.templating import Jinja2Templates
 from auth.auth_linkedin import router as linkedin_router
 from auth.auth_google import router as google_router
 import re
+from pymongo import DESCENDING
+from fastapi.exceptions import RequestValidationError
 
 # Load environment variables
 load_dotenv()
@@ -52,7 +54,7 @@ try:
     database = client[DATABASE_NAME]
     fs = AsyncIOMotorGridFSBucket(database)
     profile_collection = database["profiles"]
-    sub_student_profiles = database["sub_student_profiles"]
+    # sub_student_profiles = database["sub_student_profiles"]
     otp_collection = database["otp_collection"]
     admin_collection = database["admin"]
     # Activity - Path - Module
@@ -62,45 +64,67 @@ except Exception as e:
     logging.error(f"Failed to connect to MongoDB. Error: {e}")
 
 
+# Custom Exception Handler for Validation Errors (422)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = []
+    for error in exc.errors():
+        errors.append({
+            "field": ".".join(map(str, error["loc"][1:])),  # Remove 'body' from location
+            "message": error["msg"]
+        })
+
+    return JSONResponse(
+        status_code=400,  # You can change this to 422 if required
+        content={"message": errors, "status_code": 0},
+    )
+
+# Custom Exception Handler for HTTPException
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"message": exc.detail, "status_code": 0},
+    )
 
 # Register - User
 @app.post("/register_student")
 async def register_student(student: RegisterStudent):
     try:
-        if await profile_collection.find_one({"$or": [{"email": student.email}, {"phone": student.phone}]}):
-            # raise HTTPException(status_code=409, detail="student already exists.")
-            return JSONResponse(status_code=409, content={
-            "message": f"student already exists.",
-            "status_code":0
-            })
-        
+        # Validate phone number
+        valid_phone = validation_number(student.phone)
+        print(valid_phone, "valid_phone")
 
-        last_student = await profile_collection.find_one({}, sort=[("student_id", -1)])
+        # Check if student already exists
+        existing_student = await profile_collection.find_one({"$or": [{"email": student.email}, {"phone": student.phone}]})
+        if existing_student:
+            raise HTTPException(status_code=409, detail="Student already exists.")
+
+        # Generate new student ID
+        last_student = await profile_collection.find_one({}, sort=[("student_id", DESCENDING)])
         student_id = 101 if last_student is None else last_student["student_id"] + 1
 
         # Convert Pydantic model to dictionary
         student_data = student.model_dump()
         student_data["student_id"] = student_id
-        student_data["is_kids"] = student_id
+        # student_data["is_kids"] = False  # Set a proper value
 
-        print(student_data, "student_data +++++++++")
+        # Insert student data
         result = await profile_collection.insert_one(student_data)
         inserted_id = result.inserted_id
 
-        print(inserted_id, "inserted_id +++++++++")
+        # Retrieve created student profile
         created_profile = await profile_collection.find_one({"_id": inserted_id}, {"_id": 0})
 
-        print(created_profile, "created_profile +++++++++")
         return JSONResponse(status_code=201, content={
             "message": "Successfully Registered Student.",
-            "status_code":1,
+            "status_code": 1,
             "data": created_profile
         })
+
     except Exception as e:
-        return JSONResponse(status_code=500, content={
-            "message": f"Failed to register {e}",
-            "status_code":0
-        })
+        return JSONResponse(status_code=500, content={"message": f"Failed to register: {str(e)}", "status_code": 0})
+
         # raise HTTPException(status_code=500, message=f"Internal server {e}")
 
 
@@ -108,12 +132,17 @@ async def register_student(student: RegisterStudent):
 @app.post("/login_student")
 async def login_student(login_student:LoginStudent):
     try:
-        print(login_student, "login_student")
+        # Validate phone number
+        valid_phone = validation_number(login_student.phone)
+        # print(valid_phone, "valid_phone")
+
+        # print(login_student, "login_student")
         profile_details =  await profile_collection.find_one(
-            {"email":login_student.email, "phone":login_student.phone},
-            {"_id": 0, "email":1, "phone":1})
+            {"email":login_student.email, "phone":valid_phone},
+            {"_id": 0, "email":1, "phone":1}
+            )
         
-        print(profile_details, "profile_details ----->")
+        # print(profile_details, "profile_details ----->")
         if not profile_details:
             # raise HTTPException(status_code=404, detail="student does not exists.")
             return JSONResponse(status_code=404, content={
@@ -122,7 +151,7 @@ async def login_student(login_student:LoginStudent):
             })
 
         
-        print(profile_details, "profile_details")
+        # print(profile_details, "profile_details")
 
         token_data = {
             "sub": profile_details["email"],
@@ -140,6 +169,7 @@ async def login_student(login_student:LoginStudent):
             "token_type": "bearer",
             "data": profile_details
         })
+    
     except Exception as e:
         return JSONResponse(status_code=500, content={
             "message": f"Internal server error {e}",
@@ -167,8 +197,8 @@ async def get_student(student_id: int):
 
 
 # GET ALL SUB - STUDENTS
-@app.get("/student_get_all_sub_student/{student_id}")
-async def student_get_all_sub_student(student_id: int):
+@app.get("/get_all_sub_student/{student_id}")
+async def get_all_sub_student(student_id: int):
     try:
         sub_student_records = []
 
@@ -197,7 +227,7 @@ async def student_get_all_sub_student(student_id: int):
 
         # Fetch all sub-student records
         for sub_student_id in range(len(sub_student_ids)):
-            sub_student_itr = await sub_student_profiles.find_one(
+            sub_student_itr = await profile_collection.find_one(
                 {"student_id": sub_student_ids[sub_student_id]},
                 {"resume_name":0}
                 )
@@ -225,110 +255,114 @@ async def student_get_all_sub_student(student_id: int):
 
 
 # UPDATE STUDENT DATA
-@app.put("/update_user/{student_id}")
-@app.patch("/update_user/{student_id}")
-async def update_user(student_id: int, request: Request):
-    try:
-        profile_updates: Dict[str, Any] = await request.json()  # Convert JSON to dict
+# @app.put("/update_student/{student_id}")
+# @app.patch("/update_student/{student_id}")
+# async def update_student(student_id: int, request: Request):
+#     try:
+#         profile_updates: Dict[str, Any] = await request.json()  # Convert JSON to dict
 
-        # Prevent updating restricted fields
-        if "student_id" in profile_updates:
-            # raise HTTPException(status_code=401, detail="student_id cannot be updated")
-            return JSONResponse(status_code=401, content={
-                "message": "student_id cannot be updated.",
-                "status_code": 0
-            })
+#         # Prevent updating restricted fields
+#         if "student_id" in profile_updates:
+#             # raise HTTPException(status_code=401, detail="student_id cannot be updated")
+#             return JSONResponse(status_code=401, content={
+#                 "message": "student_id cannot be updated.",
+#                 "status_code": 0
+#             })
 
-        if not profile_updates:
-            # raise HTTPException(status_code=400, detail="Request body cannot be empty.")
-            return JSONResponse(status_code=400, content={
-                "message": "Request body cannot be empty.",
-                "status_code": 0
-            })
+#         if not profile_updates:
+#             # raise HTTPException(status_code=400, detail="Request body cannot be empty.")
+#             return JSONResponse(status_code=400, content={
+#                 "message": "Request body cannot be empty.",
+#                 "status_code": 0
+#             })
 
-        print(profile_updates, "profile_updates")
+#         print(profile_updates, "profile_updates")
 
-        # Check if the user exists
-        existing_user = await profile_collection.find_one({"student_id": student_id})
-        if not existing_user:
-            # raise HTTPException(status_code=404, detail="User does not exist!")
-            return JSONResponse(status_code=404, content={
-                "message": "User does not exist!.",
-                "status_code": 0
-            })
+#         # Check if the user exists
+#         existing_user = await profile_collection.find_one({"student_id": student_id})
+#         if not existing_user:
+#             # raise HTTPException(status_code=404, detail="User does not exist!")
+#             return JSONResponse(status_code=404, content={
+#                 "message": "User does not exist!.",
+#                 "status_code": 0
+#             })
             
-        if request.method == "PATCH":
-            # Remove fields with `None` values for PATCH (ignores missing fields)
-            profile_updates = {k: v for k, v in profile_updates.items() if v is not None}
+#         if request.method == "PATCH":
+#             # Remove fields with `None` values for PATCH (ignores missing fields)
+#             profile_updates = {k: v for k, v in profile_updates.items() if v is not None}
 
-            if not profile_updates:  # If no valid fields remain
-                # raise HTTPException(status_code=400, detail="No valid fields provided for update.")
-                return JSONResponse(status_code=400, content={
-                    "message": "No valid fields provided for update.",
-                    "status_code": 0
-                })
+#             if not profile_updates:  # If no valid fields remain
+#                 # raise HTTPException(status_code=400, detail="No valid fields provided for update.")
+#                 return JSONResponse(status_code=400, content={
+#                     "message": "No valid fields provided for update.",
+#                     "status_code": 0
+#                 })
 
-        # Update only the provided fields
-        result = await profile_collection.update_one(
-            {"student_id": student_id},
-            {"$set": profile_updates}
-        )
+#         # Update only the provided fields
+#         result = await profile_collection.update_one(
+#             {"student_id": student_id},
+#             {"$set": profile_updates}
+#         )
 
-        if result.modified_count == 0:
-            # raise HTTPException(status_code=400, detail="No changes made to the profile.")
-            return JSONResponse(status_code=400, content={
-                "message": "No changes made to the profile.",
-                "status_code": 0
-            })
+#         if result.modified_count == 0:
+#             # raise HTTPException(status_code=400, detail="No changes made to the profile.")
+#             return JSONResponse(status_code=400, content={
+#                 "message": "No changes made to the profile.",
+#                 "status_code": 0
+#             })
 
-        # Fetch updated user data
-        updated_user = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
+#         # Fetch updated user data
+#         updated_user = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
 
-        return JSONResponse(status_code=200, content={
-            "message": "Profile updated successfully!",
-            "status_code": 1,
-            "profile": updated_user
-            }
-        )
+#         return JSONResponse(status_code=200, content={
+#             "message": "Profile updated successfully!",
+#             "status_code": 1,
+#             "profile": updated_user
+#             }
+#         )
 
-    except HTTPException as http_exc:
-        raise http_exc  # Pass through FastAPI exceptions
+#     except HTTPException as http_exc:
+#         raise http_exc  # Pass through FastAPI exceptions
 
-    except Exception as e:
-        return JSONResponse(status_code=500, content={
-            "message": f"Error updating profile: {str(e)}",
-            "status_code": 0
-            })
+#     except Exception as e:
+#         return JSONResponse(status_code=500, content={
+#             "message": f"Error updating profile: {str(e)}",
+#             "status_code": 0
+#             })
 
 
 
 # Send OTP to the user
-@app.post("/student/send_otp_watsapp")
+from fastapi import HTTPException
+
+@app.post("/send_otp_watsapp")
 async def send_otp_watsapp(phone: Send_Otp_Number):
     try:
         phone_number = phone.phone.strip()  # Remove spaces
 
         # Ensure phone number is not empty
         if not phone_number:
-            return JSONResponse(status_code=400, content={
-                "message": "Phone number is required.",
-                "status_code": 0
-            })
+            raise HTTPException(status_code=400, detail="Phone number is required.")
 
         # Regex pattern to extract country code and local number
-        phone_pattern = re.compile(r"^\+?(\d{1,4})?(\d{10})$")  
+        phone_pattern = re.compile(r"^\+?(\d{1,4})?(\d{10})$")
 
         match = phone_pattern.match(phone_number)
         if not match:
-            return JSONResponse(status_code=400, content={
-                "message": "Invalid phone number format. Use correct format (e.g., +919149076448 or +9149076448).",
-                "status_code": 0
-            })
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid phone number format. Use correct format (e.g., +919149076448 or +9149076448)."
+            )
 
-        country_code, local_number = match.groups()  
+        country_code, local_number = match.groups()
 
         # Ensure correct local number extraction
         final_number = local_number if not country_code or country_code == "91" else phone_number[len(country_code) + 1:]
+
+        # Check if phone number exists in the database
+        user = await profile_collection.find_one({"phone": final_number})
+        if not user:
+            raise HTTPException(status_code=404, detail="Phone number not found.")
 
         # Generate 6-digit OTP
         otp_code = random.randint(100000, 999999)
@@ -341,7 +375,8 @@ async def send_otp_watsapp(phone: Send_Otp_Number):
 
         # Save to MongoDB
         await otp_collection.insert_one(otp_data)
-        
+
+        # Send OTP via WhatsApp
         try:
             send_watsapp_message(final_number, otp_code)  # Send only local number
             return JSONResponse(status_code=200, content={
@@ -349,116 +384,72 @@ async def send_otp_watsapp(phone: Send_Otp_Number):
                 "status_code": 1
             })
         except Exception as e:
-            return JSONResponse(status_code=500, content={
-                "message": f"Internal server error with WhatsApp service: {e}",
-                "status_code": 0
-            })
+            raise HTTPException(status_code=500, detail=f"Internal server error with WhatsApp service: {e}")
+
+    except HTTPException as e:
+        raise e  # Rethrow FastAPI exceptions to be handled by the global exception handler
     except Exception as e:
-        return JSONResponse(status_code=500, content={
-            "message": f"Internal server error: {e}",
-            "status_code": 0
-        })
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
     
 
 
-# Send OTP to the user
-@app.post("/student/send_otp_sms")
+@app.post("/send_otp_sms")
 async def send_otp_sms(phone: Send_Otp_Number):
     try:
-        phone_number = phone.phone.strip()  # Remove spaces
+        # Validate phone number
+        valid_phone = validation_number(phone.phone)
 
-        # Ensure phone number is not empty
-        if not phone_number:
-            return JSONResponse(status_code=400, content={
-                "message": "Phone number is required.",
-                "status_code": 0
-            })
-
-        # Regex pattern to capture optional country code and 10-digit local number
-        phone_pattern = re.compile(r"^\+?(\d{1,4})?(\d{10})$")  
-
-        match = phone_pattern.match(phone_number)
-        if not match:
-            return JSONResponse(status_code=400, content={
-                "message": "Invalid phone number format. Use correct format (e.g., +919149076448 or +9149076448).",
-                "status_code": 0
-            })
-
-        country_code, local_number = match.groups()  # Extract country code and local number
-
-        # If country code is missing, assume it's an Indian number
-        if not country_code or country_code == "91":
-            final_number = local_number
-        else:
-            final_number = phone_number[len(country_code) + 1:]  # Generic case for other country codes
+        # Check if phone number exists in the database
+        number = await profile_collection.find_one({"phone": valid_phone})
+        if not number:
+            raise HTTPException(status_code=404, detail="Phone number not found.")
 
         # Generate 6-digit OTP
         otp_code = random.randint(100000, 999999)
 
         otp_data = {
-            "phone": final_number,  # Store only the correct local number
+            "phone": valid_phone,  # Store only the correct local number
             "otp": encode_base64(str(otp_code)),
             "expires_at": datetime.utcnow() + timedelta(minutes=5)  # OTP valid for 5 minutes
         }
 
-        # Save to MongoDB (example: otp_collection)
+        # Save OTP in MongoDB
         await otp_collection.insert_one(otp_data)
-        
+
+        # Send OTP via SMS
         try:
-            send_sms_message(final_number, otp_code)  # Send only local number
+            send_sms_message(valid_phone, otp_code)  # Send only local number
             return JSONResponse(status_code=200, content={
-                "message": f"OTP sent to {final_number} via SMS",
+                "message": f"OTP sent to {valid_phone} via SMS",
                 "status_code": 1
             })
         except Exception as e:
-            return JSONResponse(status_code=500, content={
-                "message": f"Internal server error with SMS service: {e}",
-                "status_code": 0
-            })
+            raise HTTPException(status_code=500, detail=f"Internal server error with SMS service: {e}")
+
+    except HTTPException as e:
+        raise e  # Rethrow FastAPI exceptions to be handled by the global exception handler
     except Exception as e:
-        return JSONResponse(status_code=500, content={
-            "message": f"Internal server error: {e}",
-            "status_code": 0
-        })
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
-@app.post("/student/verify-otp")
-async def verify_otp(veryfy_otp: Veryfy_OTP):
+# VERIFY - OTP
+@app.post("/verify_otp")
+async def verify_otp(verify_otp: Veryfy_OTP):
     try:
-        if not veryfy_otp.phone or not veryfy_otp.otp:
-            return JSONResponse(status_code=400, content={
-                "message": "Phone and OTP are required",
-                "status_code": 0
-            })
+        if not verify_otp.phone or not verify_otp.otp:
+            raise HTTPException(status_code=400, detail="Phone and OTP are required.")
 
-        phone_number = veryfy_otp.phone.strip()
+        # Validate phone number format using the utility function
+        phone_number = validation_number(verify_otp.phone)
 
-        # Regex pattern to extract country code and local number
-        phone_pattern = re.compile(r"^\+?(\d{1,4})?(\d{10})$")  
-        match = phone_pattern.match(phone_number)
-        if not match:
-            return JSONResponse(status_code=400, content={
-                "message": "Invalid phone number format.",
-                "status_code": 0
-            })
-
-        country_code, local_number = match.groups()
-        final_number = local_number if not country_code or country_code == "91" else phone_number[len(country_code) + 1:]
-
-        # Find OTP record in database
-        otp_record = await otp_collection.find_one({"phone": final_number, "otp": encode_base64(veryfy_otp.otp)})
+        # Find OTP record in the database
+        otp_record = await otp_collection.find_one({"phone": phone_number, "otp": encode_base64(verify_otp.otp)})
 
         if not otp_record:
-            return JSONResponse(status_code=401, content={
-                "message": "Invalid OTP",
-                "status_code": 0
-            })
+            raise HTTPException(status_code=401, detail="Invalid OTP.")
 
         if otp_record["expires_at"] < datetime.utcnow():
-            return JSONResponse(status_code=401, content={
-                "message": "OTP has expired",
-                "status_code": 0
-            })
+            raise HTTPException(status_code=401, detail="OTP has expired.")
 
         # Remove OTP from database after successful verification
         await otp_collection.delete_one({"_id": otp_record["_id"]})
@@ -468,15 +459,19 @@ async def verify_otp(veryfy_otp: Veryfy_OTP):
             "status_code": 1
         })
 
+    except HTTPException as http_exc:
+        return JSONResponse(status_code=http_exc.status_code, content={
+            "message": http_exc.detail,
+            "status_code": 0
+        })
     except Exception as e:
         return JSONResponse(status_code=500, content={
-            "message": f"Internal server error: {e}",
+            "message": f"Internal server error: {str(e)}",
             "status_code": 0
         })
 
-
 # Download - Resume
-@app.post("/download-resume")
+@app.post("/download_resume")
 async def download_resume(payload: DownloadResume):
     try:
         student_id = payload.student_id
@@ -578,11 +573,15 @@ async def admin_login(admin: Admin):
         })
 
 
+
 # REGISTER - SUB - STUDENT
 @app.post("/register_sub_student")
 async def register_sub_student(register_sub_student: RegisterSubStudent):
     try:
-        if await sub_student_profiles.find_one({"$or": [{"email": register_sub_student.email}, {"phone": register_sub_student.phone}]}):
+        # Validate phone number
+        valid_phone = validation_number(register_sub_student.phone)
+
+        if await profile_collection.find_one({"$or": [{"email": register_sub_student.email}, {"phone": valid_phone}]}):
             # raise HTTPException(status_code=409, detail="sub student already exists.")
             return JSONResponse(status_code=409, content={
                 "message": "sub student already exists.",
@@ -598,7 +597,7 @@ async def register_sub_student(register_sub_student: RegisterSubStudent):
             })
 
         # Generate new student_id
-        last_student = await sub_student_profiles.find_one({}, sort=[("student_id", -1)])
+        last_student = await profile_collection.find_one({}, sort=[("student_id", -1)])
         student_id = 1001 if last_student is None else last_student["student_id"] + 1
 
         try:
@@ -617,15 +616,15 @@ async def register_sub_student(register_sub_student: RegisterSubStudent):
         # Convert Pydantic model to dictionary
         student_data = register_sub_student.model_dump()
         student_data["student_id"] = student_id
+        student_data["phone"] = valid_phone
         
         print(student_data, "student_data +++++++++")
-        result = await sub_student_profiles.insert_one(student_data)
+        result = await profile_collection.insert_one(student_data)
         inserted_id = result.inserted_id
         
         print(inserted_id, "inserted_id +++++++++")
-        created_profile = await sub_student_profiles.find_one({"_id": inserted_id}, {"_id": 0})
+        created_profile = await profile_collection.find_one({"_id": inserted_id}, {"_id": 0})
 
-        print(created_profile, "created_profile +++++++++")
         return JSONResponse(status_code=201, content={
             "message": "Successfully Registered Student.",
             "status_code": 1,
@@ -643,7 +642,10 @@ async def register_sub_student(register_sub_student: RegisterSubStudent):
 @app.get("/get_sub_student/{student_id}")
 async def get_sub_student(student_id: int):
     try:
-        student_details = await sub_student_profiles.find_one({"student_id":student_id}, {"_id": 0, "resume_name":0})
+        student_details = await profile_collection.find_one(
+            {"$and": [{"student_id": student_id}, {"profile_type": "secondary"}]}, 
+            {"_id": 0, "resume_name": 0}
+        )
 
         if not student_details:
             # raise HTTPException(status_code=404, detail="students does not exists.")
@@ -651,13 +653,15 @@ async def get_sub_student(student_id: int):
                     "message": "students does not exists.",
                     "status_code": 0
             })
+        
+        print(student_details, "student_details +++")
+        if not student_details.get("profile_type") == "primary":
+            return JSONResponse(status_code=200, content={
+                "message": "successfully data recieved.",
+                "status_code": 1,
+                "data": student_details
+            })
 
-        return JSONResponse(status_code=200, content={
-            "message": "successfully data recieved.",
-            "status_code": 1,
-            "data": student_details
-        })
-    
     except Exception as e:
         return JSONResponse(status_code=500, content={
             "message": f"Internal server error {e}",
@@ -666,90 +670,90 @@ async def get_sub_student(student_id: int):
 
 
 # SUB - STUDENT - UPDATE
-@app.put("/sub_student_update_user/{student_id}")
-@app.patch("/sub_student_update_user/{student_id}")
-async def sub_student_update_user(student_id: int, request: Request):
-    try:
-        profile_updates: Dict[str, Any] = await request.json()  # Convert JSON to dict
+# @app.put("/update_sub_student/{student_id}")
+# @app.patch("/update_sub_student/{student_id}")
+# async def update_sub_student(student_id: int, request: Request):
+#     try:
+#         profile_updates: Dict[str, Any] = await request.json()  # Convert JSON to dict
         
-        # Prevent updating restricted fields
-        if "parent_id" in profile_updates or "student_id" in profile_updates:
-            # raise HTTPException(status_code=401, detail="parent_id or student_id cannot be updated")
-            return JSONResponse(status_code=401, content={
-                "message": "parent_id or student_id cannot be updated",
-                "status_code": 0
-            })
+#         # Prevent updating restricted fields
+#         if "parent_id" in profile_updates or "student_id" in profile_updates:
+#             # raise HTTPException(status_code=401, detail="parent_id or student_id cannot be updated")
+#             return JSONResponse(status_code=401, content={
+#                 "message": "parent_id or student_id cannot be updated",
+#                 "status_code": 0
+#             })
 
-        if not profile_updates:
-            # raise HTTPException(status_code=400, detail="Request body cannot be empty.")
-            return JSONResponse(status_code=400, content={
-                "message": "Request body cannot be empty.",
-                "status_code": 0
-            })
+#         if not profile_updates:
+#             # raise HTTPException(status_code=400, detail="Request body cannot be empty.")
+#             return JSONResponse(status_code=400, content={
+#                 "message": "Request body cannot be empty.",
+#                 "status_code": 0
+#             })
 
-        print(profile_updates, "profile_updates")
+#         print(profile_updates, "profile_updates")
 
-        # Check if the user exists
-        existing_user = await sub_student_profiles.find_one({"student_id": student_id})
-        if not existing_user:
-            # raise HTTPException(status_code=404, detail="User does not exist!")
-            return JSONResponse(status_code=404, content={
-                "message": "User does not exist!",
-                "status_code": 0
-            })
+#         # Check if the user exists
+#         existing_user = await profile_collection.find_one({"student_id": student_id})
+#         if not existing_user:
+#             # raise HTTPException(status_code=404, detail="User does not exist!")
+#             return JSONResponse(status_code=404, content={
+#                 "message": "User does not exist!",
+#                 "status_code": 0
+#             })
 
-        # Convert ObjectId to string
-        existing_user["_id"] = str(existing_user["_id"])
+#         # Convert ObjectId to string
+#         existing_user["_id"] = str(existing_user["_id"])
 
-        if request.method == "PATCH":
-            # Remove fields with `None` values for PATCH (ignores missing fields)
-            profile_updates = {k: v for k, v in profile_updates.items() if v is not None}
+#         if request.method == "PATCH":
+#             # Remove fields with `None` values for PATCH (ignores missing fields)
+#             profile_updates = {k: v for k, v in profile_updates.items() if v is not None}
 
-            # Ensure at least one field is different before updating
-            actual_updates = {k: v for k, v in profile_updates.items() if existing_user.get(k) != v}
+#             # Ensure at least one field is different before updating
+#             actual_updates = {k: v for k, v in profile_updates.items() if existing_user.get(k) != v}
             
-            if not actual_updates:  
-                return JSONResponse(status_code=200, content={
-                    "message": "No changes detected. Profile remains the same.",
-                    "status_code":1,
-                    "profile": existing_user
-                })
-        else:
-            actual_updates = profile_updates  # PUT replaces entire document
+#             if not actual_updates:  
+#                 return JSONResponse(status_code=200, content={
+#                     "message": "No changes detected. Profile remains the same.",
+#                     "status_code":1,
+#                     "profile": existing_user
+#                 })
+#         else:
+#             actual_updates = profile_updates  # PUT replaces entire document
 
-        # Update only the provided fields
-        result = await sub_student_profiles.update_one(
-            {"student_id": student_id},
-            {"$set": actual_updates}
-        )
+#         # Update only the provided fields
+#         result = await profile_collection.update_one(
+#             {"student_id": student_id},
+#             {"$set": actual_updates}
+#         )
 
-        if result.modified_count == 0:
-            return JSONResponse(status_code=200, content={
-                "message": "Profile update request received, but no changes were needed.",
-                "status_code": 1,
-                "profile": existing_user
-            })
+#         if result.modified_count == 0:
+#             return JSONResponse(status_code=200, content={
+#                 "message": "Profile update request received, but no changes were needed.",
+#                 "status_code": 1,
+#                 "profile": existing_user
+#             })
 
-        # Fetch updated user data
-        updated_user = await sub_student_profiles.find_one({"student_id": student_id})
+#         # Fetch updated user data
+#         updated_user = await profile_collection.find_one({"student_id": student_id})
         
-        if updated_user:
-            updated_user["_id"] = str(updated_user["_id"])  # Convert ObjectId to string
+#         if updated_user:
+#             updated_user["_id"] = str(updated_user["_id"])  # Convert ObjectId to string
 
-        return JSONResponse(status_code=200, content={
-            "message": "Profile updated successfully!",
-            "status_code": 1,
-            "profile": updated_user
-        })
+#         return JSONResponse(status_code=200, content={
+#             "message": "Profile updated successfully!",
+#             "status_code": 1,
+#             "profile": updated_user
+#         })
 
-    except HTTPException as http_exc:
-        raise http_exc  # Pass through FastAPI exceptions
+#     except HTTPException as http_exc:
+#         raise http_exc  # Pass through FastAPI exceptions
 
-    except Exception as e:
-        return JSONResponse(status_code=500, content={
-            "detail": f"Error updating profile: {str(e)}",
-            "status_code":0
-        })
+#     except Exception as e:
+#         return JSONResponse(status_code=500, content={
+#             "detail": f"Error updating profile: {str(e)}",
+#             "status_code":0
+#         })
 
 
 
