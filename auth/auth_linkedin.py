@@ -134,7 +134,7 @@ async def linkedin_callback(request: Request):
         print("🔹 LinkedIn User Data:", user_data)
 
         # 🔹 Extract user details
-        name = user_data.get("name", "Unknown User")  # Ensure default values
+        full_name = user_data.get("name", "Unknown User")  # Ensure default values
         email = user_data.get("email")
 
         if not email:
@@ -149,13 +149,12 @@ async def linkedin_callback(request: Request):
             token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
 
             jwt_payload = {
-                "name": existing_user["name"],
+                "full_name": existing_user["full_name"],
                 "email": existing_user["email"],
                 "exp": token_expiry  # Ensure token expiration
             }
             jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
-            
-            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}"
+            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}"
             return RedirectResponse(redirect_url)
             # return JSONResponse(status_code=200,content={"token": jwt_token, "user": user_data})
 
@@ -166,11 +165,25 @@ async def linkedin_callback(request: Request):
 
         # 🔹 If user does not exist, insert new user
         new_user = {
-            "name": name,
+            "full_name": full_name,
             "email": email,
             "student_id": student_id,
             "profile_type": "primary"
         }
+
+        # ✅ Fill missing fields with None
+        default_fields = [
+            "email2", "phone", "phone2", "country", "address",
+            "resume_name", "linkedin", "current_city", "preferred_city",
+            "summary_of_profile", "college_background", "current_organization",
+            "total_work_experience_years", "comment", "referred_by",
+            "current_ctc", "desired_ctc", "github", "leetcode",
+            "codechef", "sub_student_id"
+        ]
+
+        for field in default_fields:
+            new_user.setdefault(field, None)  # Use setdefault to avoid overwriting existing values
+
         print("✅ Creating new user")
 
         result = await profile_collection.insert_one(new_user)
@@ -182,7 +195,7 @@ async def linkedin_callback(request: Request):
         print(new_user_serialized, "new_user_serialized")
         # 🔹 Generate JWT Token for new user
         jwt_payload = {
-            "name": name,
+            "name": full_name,
             "email": email,
             "exp": token_expiry  # Ensure token expiration
         }
@@ -190,7 +203,7 @@ async def linkedin_callback(request: Request):
 
         print(jwt_token, "jwt_token ++")
         # 🔹 Redirect to React App with JWT Token
-        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}"
+        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}"
         return RedirectResponse(redirect_url)
         # return JSONResponse(status_code=200, content={"token": jwt_token, "user": new_user_serialized})
 

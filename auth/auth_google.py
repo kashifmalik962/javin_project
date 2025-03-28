@@ -121,9 +121,10 @@ async def google_callback(request: Request):
 
         print("🔹 Google User Data:", user_data)
 
-        name = user_data.get("name", "Unknown User")
+        full_name = user_data.get("name", "Unknown User")
         email = user_data.get("email")
 
+        print(full_name, email, "full_name, email")
         if not email:
             raise HTTPException(status_code=200, detail="Email not found in Google response")
 
@@ -133,13 +134,15 @@ async def google_callback(request: Request):
             user_data = serialize_mongo_document(existing_user)
             token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
             
+            print(user_data, "user_data ++++++++++++++++++++++")
             jwt_payload = {
-                "name": user_data["name"],
+                "full_name": user_data["full_name"],
                 "email": user_data["email"],
                 "exp": token_expiry  # Ensure expiration time is included
             }
             jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
-            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}"
+            print(full_name, "full_name ===----===")
+            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}"
             return RedirectResponse(redirect_url)
             # return JSONResponse(status_code=200,content={"token": jwt_token, "user": user_data})
 
@@ -147,12 +150,27 @@ async def google_callback(request: Request):
         last_student = await profile_collection.find_one({}, sort=[("student_id", DESCENDING)])
         student_id = 101 if last_student is None else last_student["student_id"] + 1
 
+        # 🔹 If user does not exist, insert new user
         new_user = {
-            "name": name,
+            "full_name": full_name,
             "email": email,
             "student_id": student_id,
             "profile_type": "primary"
         }
+
+        # ✅ Fill missing fields with None
+        default_fields = [
+            "email2", "phone", "phone2", "country", "address",
+            "resume_name", "linkedin", "current_city", "preferred_city",
+            "summary_of_profile", "college_background", "current_organization",
+            "total_work_experience_years", "comment", "referred_by",
+            "current_ctc", "desired_ctc", "github", "leetcode",
+            "codechef", "sub_student_id"
+        ]
+
+        for field in default_fields:
+            new_user.setdefault(field, None)  # Use setdefault to avoid overwriting existing values
+
         print("✅ Creating new user")
 
         result = await profile_collection.insert_one(new_user)
@@ -162,7 +180,7 @@ async def google_callback(request: Request):
         token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
 
         jwt_payload = {
-            "name": name,
+            "name": full_name,
             "email": email,
             "exp": token_expiry
         }
@@ -171,6 +189,6 @@ async def google_callback(request: Request):
         jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
         print(jwt_token, "jwt_token ++")
 
-        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={name}"
+        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}"
         return RedirectResponse(redirect_url)
         # return JSONResponse(status_code=200, content={"token": jwt_token, "user": new_user_serialized})
