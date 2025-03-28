@@ -40,7 +40,7 @@ fs = None
 profile_collection = None
 
 # MongoDB connection
-MONGO_DETAILS = os.getenv("MONGO_URI")
+MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik962:gYxgUGO6622a1cRr@cluster0.aad1d.mongodb.net/node_mongo_crud?")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "student_profile")
 
 async def connect_to_mongo():
