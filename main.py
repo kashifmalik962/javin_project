@@ -464,33 +464,26 @@ async def update_student(student_id: int, request: Request):
                 "status_code": 0
             })
 
-        # Update student profile
-        result = await profile_collection.update_one(
-            {"student_id": student_id},
-            {"$set": profile_updates}
-        )
-
-        # if result.modified_count == 0:
-        #     return JSONResponse(status_code=200, content={
-        #         "message": "No changes made to the profile.",
-        #         "status_code": 0
-        #     })
-
         # Fetch updated user data
         updated_user = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
-        print(updated_user, "updated_user")
          # Profile Completeness in percentage
         number_of_fields = len(updated_user)
         null_fields = [key for key, value in updated_user.items() if value is None]
 
         completeness_precent = 100 - ((len(null_fields)/number_of_fields)*100)
+        
+        profile_updates["profile_complete"] = completeness_precent
         update_profile_complete = await profile_collection.update_one(
             {"student_id": student_id},
-            {"$set": {"profile_complete": completeness_precent}}
+            {"$set": profile_updates}
         )
 
-        print(update_profile_complete, "update_profile_complete ++++++")
-
+        if update_profile_complete.modified_count == 0:
+            return JSONResponse(status_code=200, content={
+                "message": "No changes made to the profile.",
+                "status_code": 0
+            })
+        
         # Fetch updated profile with profile completeness after the update
         updated_profile = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
 
@@ -594,7 +587,7 @@ async def send_otp_sms(phone: Send_Otp_Number):
         # Delete old OTP (if exists) to avoid duplicates
         await otp_collection.delete_one({"phone": valid_phone})
 
-        # ✅ Insert new OTP
+        # Insert new OTP
         await otp_collection.insert_one(otp_data)
 
         # Send OTP via SMS

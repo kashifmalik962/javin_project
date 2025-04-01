@@ -8,6 +8,7 @@ from jose import JWTError, jwt
 import re
 from fastapi import HTTPException
 from jose import jwt, JWTError
+from PyPDF2 import PdfReader, PdfWriter
 
 # Load env
 load_dotenv(find_dotenv(), verbose=True)
@@ -148,18 +149,31 @@ def is_valid_email(email):
     raise HTTPException(status_code=200, detail="Invalid email format.")
 
 
+
 def save_pdf_from_base64(base64_string: str, filename: str, upload_folder=None) -> str:
     try:
         print(upload_folder, "upload_folder")
         pdf_path = os.path.join(upload_folder, filename)
         
-        # Decode Base64
+        # Decode Base64 and save initial PDF
         pdf_bytes = base64.b64decode(base64_string)
-        
-        # Save PDF File
         with open(pdf_path, "wb") as pdf_file:
             pdf_file.write(pdf_bytes)
         
+        # Compress the PDF
+        reader = PdfReader(pdf_path)
+        writer = PdfWriter()
+        
+        # Copy all pages with compression
+        for page in reader.pages:
+            page.compress_content_streams()  # Compress content streams
+            writer.add_page(page)
+        
+        # Save compressed PDF (overwrites original)
+        with open(pdf_path, "wb") as compressed_pdf:
+            writer.write(compressed_pdf)
+        
         return pdf_path
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error while saving PDF: {str(e)}")
+        raise HTTPException(status_code=200, detail=f"Error while saving or compressing PDF: {str(e)}")
