@@ -67,6 +67,7 @@ def decode_base64(encoded_password):
     return decoded_string
 
 
+# Generate JWT Token
 def create_access_token(data: dict, type="student"):
     if type == "admin":
         print(ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES, "ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES")
@@ -88,6 +89,23 @@ def create_access_token(data: dict, type="student"):
 
     return encoded_jwt
 
+
+# Verify / Validate - Token
+def validate_token(token: str):
+    """
+    Validate the JWT token and return the decoded payload.
+    """
+    try:
+        # Decode the token using the secret key and algorithm
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Optionally, check if token is expired
+        if datetime.utcfromtimestamp(payload["exp"]) < datetime.utcnow():
+            raise HTTPException(status_code=200, detail="Token has expired.")
+        
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=200, detail="Invalid token.")
 
 # Validate phone number
 def validation_number(phone: str) -> str:
@@ -114,6 +132,7 @@ def validation_number(phone: str) -> str:
     raise HTTPException(status_code=200, detail="Invalid phone number format. Use a valid 10-digit number.")
 
 
+# Validate Email
 def is_valid_email(email):
     """
     Validate an email address using a regular expression.
@@ -129,19 +148,18 @@ def is_valid_email(email):
     raise HTTPException(status_code=200, detail="Invalid email format.")
 
 
-# Validate - Token
-def validate_token(token: str):
-    """
-    Validate the JWT token and return the decoded payload.
-    """
+def save_pdf_from_base64(base64_string: str, filename: str, upload_folder=None) -> str:
     try:
-        # Decode the token using the secret key and algorithm
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print(upload_folder, "upload_folder")
+        pdf_path = os.path.join(upload_folder, filename)
         
-        # Optionally, check if token is expired
-        if datetime.utcfromtimestamp(payload["exp"]) < datetime.utcnow():
-            raise HTTPException(status_code=200, detail="Token has expired.")
+        # Decode Base64
+        pdf_bytes = base64.b64decode(base64_string)
         
-        return payload
-    except JWTError:
-        raise HTTPException(status_code=200, detail="Invalid token.")
+        # Save PDF File
+        with open(pdf_path, "wb") as pdf_file:
+            pdf_file.write(pdf_bytes)
+        
+        return pdf_path
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error while saving PDF: {str(e)}")

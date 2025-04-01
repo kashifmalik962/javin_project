@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pymongo import MongoClient
 from bson import ObjectId
 from typing import Optional, Dict, Any
@@ -25,6 +25,8 @@ from auth.auth_google import router as google_router
 import re
 from pymongo import DESCENDING
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
+
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +40,11 @@ MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik962:gYxgUGO6622
 DATABASE_NAME = os.getenv("DATABASE_NAME", "student_profile")
 PORT = int(os.getenv("PORT", 8000))
 
+UPLOAD_FOLDER = "static/resumes"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Mount the static folder
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -363,6 +370,20 @@ async def update_student(student_id: int, request: Request):
 
         profile_updates: Dict[str, Any] = await request.json()  # Convert JSON to dict
 
+        if profile_updates.get("resume_name"):
+            full_name = profile_updates.get("full_name")
+            base64_resume = profile_updates.get("resume_name")
+            # Create a unique filename (e.g., kashif_malik_resume.pdf)
+            filename = f"{full_name.replace(' ', '_')}_resume.pdf"
+
+            # Save PDF from base64
+            pdf_path = save_pdf_from_base64(base64_resume, filename, upload_folder=UPLOAD_FOLDER)
+
+            # Generate public URL
+            file_url = f"https://javin-project.onrender.com/static/resumes/{filename}"
+            profile_updates["resume_name"] = file_url
+
+
         if profile_updates.get("email2") or profile_updates.get("phone2"):
             # Get existing student details
             exist_student_email = exist_student.get("email") 
@@ -449,15 +470,15 @@ async def update_student(student_id: int, request: Request):
             {"$set": profile_updates}
         )
 
-        if result.modified_count == 0:
-            return JSONResponse(status_code=200, content={
-                "message": "No changes made to the profile.",
-                "status_code": 0
-            })
+        # if result.modified_count == 0:
+        #     return JSONResponse(status_code=200, content={
+        #         "message": "No changes made to the profile.",
+        #         "status_code": 0
+        #     })
 
         # Fetch updated user data
         updated_user = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
-
+        print(updated_user, "updated_user")
          # Profile Completeness in percentage
         number_of_fields = len(updated_user)
         null_fields = [key for key, value in updated_user.items() if value is None]
@@ -467,6 +488,8 @@ async def update_student(student_id: int, request: Request):
             {"student_id": student_id},
             {"$set": {"profile_complete": completeness_precent}}
         )
+
+        print(update_profile_complete, "update_profile_complete ++++++")
 
         # Fetch updated profile with profile completeness after the update
         updated_profile = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
@@ -654,51 +677,47 @@ async def verify_otp(verify_otp: Veryfy_OTP):
 
 
 # Download - Resume
-# @app.post("/download_resume")
-# async def download_resume(payload: DownloadResume):
-#     try:
-#         student_id = payload.student_id
-#         print(student_id, "student_id")
-#         profile = await profile_collection.find_one({"student_id": student_id})
+async def download_resume(payload: DownloadResume):
+    try:
+        student_id = payload.student_id
+        student = await profile_collection.find_one({"student_id": student_id})
+    
+        if not student:
+            return JSONResponse(status_code=200, content={
+                "message": "Student not found.",
+                "status_code": 0
+            })
 
-#         print(profile, "profile")
-#         if not profile:
-#             # raise HTTPException(status_code=404, detail="Profile not found")
-#             return JSONResponse(status_code=200, content={
-#                 "message": "Profile not found",
-#                 "status_code": 0
-#             })
+        resume_url = student.get("resume_name")
+        if not resume_url:
+            return JSONResponse(status_code=200, content={
+                "message": "Resume not found.",
+                "status_code": 0
+            })
 
-#         # Get the resume Base64 data
-#         resume_base64 = profile.get("resume_name")
-#         if not resume_base64:
-#             # raise HTTPException(status_code=200, detail="Resume not found for this profile")
-#             return JSONResponse(status_code=200, content={
-#                 "message": "Resume not found for this profile.",
-#                 "status_code": 0
-#             })
+        filename = os.path.basename(resume_url)  # Extract filename safely
+        file_path = os.path.join("static/resumes", filename)
 
-#         # Decode Base64 to binary
-#         try:
-#             resume_bytes = base64.b64decode(resume_base64)
-#         except Exception as e:
-#             # raise HTTPException(status_code=200, detail=f"Failed to decode resume.")
-#             return JSONResponse(status_code=200, content={
-#                 "message": f"Failed to decode resume.",
-#                 "status_code": 0
-#             })
+        if not os.path.exists(file_path):
+            return JSONResponse(status_code=200, content={
+                "message": "File does not exist.",
+                "status_code": 0
+            })
 
-#         # Return PDF file as response
-#         return StreamingResponse(
-#             io.BytesIO(resume_bytes),
-#             media_type="application/pdf",
-#             headers={"Content-Disposition": f"attachment; filename={profile.get('full_name', 'resume')}.pdf"}
-#         )
-#     except Exception as e:
-#         return JSONResponse(status_code=200, content={
-#                 "message": f"Internal server error.",
-#                 "status_code": 0
-#             })
+        return FileResponse(
+            file_path, 
+            media_type="application/pdf", 
+            filename=filename,
+            headers={"Content-Disposition": "attachment"}
+        )
+    
+    except Exception as e:
+        print(f"Error downloading resume: {str(e)}")  # Log the error
+        return JSONResponse(status_code=500, content={
+            "message": "Internal server error.",
+            "status_code": 0
+        })
+
 
 
 
