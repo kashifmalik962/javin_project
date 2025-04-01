@@ -146,51 +146,51 @@ async def register_student(student: RegisterStudent, request: Request):
 
 
 # Login - Student 
-@app.post("/login_student")
-async def login_student(login_student:LoginStudent):
-    try:
-        # Validate phone number
-        valid_phone = validation_number(login_student.phone)
-        # print(valid_phone, "valid_phone")
+# @app.post("/login_student")
+# async def login_student(login_student:LoginStudent):
+#     try:
+#         # Validate phone number
+#         valid_phone = validation_number(login_student.phone)
+#         # print(valid_phone, "valid_phone")
 
-        # print(login_student, "login_student")
-        profile_details =  await profile_collection.find_one(
-            {"email":login_student.email, "phone":valid_phone},
-            {"_id": 0, "resume_name":0}
-            )
+#         # print(login_student, "login_student")
+#         profile_details =  await profile_collection.find_one(
+#             {"email":login_student.email, "phone":valid_phone},
+#             {"_id": 0, "resume_name":0}
+#             )
         
-        # print(profile_details, "profile_details ----->")
-        if not profile_details:
-            # raise HTTPException(status_code=200, detail="student does not exists.")
-            return JSONResponse(status_code=200, content={
-                "message": "student does not exists.",
-                "status_code": 0
-            })
+#         # print(profile_details, "profile_details ----->")
+#         if not profile_details:
+#             # raise HTTPException(status_code=200, detail="student does not exists.")
+#             return JSONResponse(status_code=200, content={
+#                 "message": "student does not exists.",
+#                 "status_code": 0
+#             })
 
         
-        # print(profile_details, "profile_details")
+#         # print(profile_details, "profile_details")
             
-        token_data = {
-            "student_id": profile_details.get("student_id"),
-            "email": profile_details["email"]
-        }
+#         token_data = {
+#             "student_id": profile_details.get("student_id"),
+#             "email": profile_details["email"]
+#         }
 
-        access_token = create_access_token(data=token_data)
+#         access_token = create_access_token(data=token_data)
         
-        return JSONResponse(status_code=200, content={
-            "message": "Successfully logged in.",
-            "status_code": 1,
-            "access_token": access_token,
-            "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
-            "token_type": "bearer",
-            "data": profile_details
-        })
+#         return JSONResponse(status_code=200, content={
+#             "message": "Successfully logged in.",
+#             "status_code": 1,
+#             "access_token": access_token,
+#             "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
+#             "token_type": "bearer",
+#             "data": profile_details
+#         })
     
-    except Exception as e:
-        return JSONResponse(status_code=200, content={
-            "message": f"Internal server error.",
-            "status_code": 0
-        })
+#     except Exception as e:
+#         return JSONResponse(status_code=200, content={
+#             "message": f"Internal server error.",
+#             "status_code": 0
+#         })
 
 
 # GET - STUDENT DETAILS
@@ -279,10 +279,10 @@ async def get_all_sub_student(student_id: int):
 
 
 # UPDATE STUDENT DATA
+# @app.patch("/update_student/{student_id}")
 @app.put("/update_student/{student_id}")
-@app.patch("/update_student/{student_id}")
 async def update_student(student_id: int, request: Request):
-    try:
+    # try:
         # Check if student exists
         exist_student = await profile_collection.find_one({"student_id": student_id})
         if not exist_student:
@@ -293,58 +293,85 @@ async def update_student(student_id: int, request: Request):
 
         profile_updates: Dict[str, Any] = await request.json()  # Convert JSON to dict
 
-        # Prevent updating restricted fields
-        if "student_id" in profile_updates:
-            return JSONResponse(status_code=200, content={
-                "message": "student_id cannot be updated.",
-                "status_code": 0
+        if profile_updates.get("email2") or profile_updates.get("phone2"):
+            # Get existing student details
+            exist_student_email = exist_student.get("email") 
+            exist_student_phone = exist_student.get("phone")
+
+            # Get new updates
+            new_email2 = profile_updates.get("email2")
+            new_phone2 = profile_updates.get("phone2")
+
+            
+            try:
+                # Validate email and phone
+                if new_email2:
+                    is_valid_email(new_email2)  # Validate email format
+                if new_phone2:
+                    validation_number(new_phone2)  # Assuming validation_number is already implemented
+            except HTTPException as e:
+                # Handle validation errors
+                return JSONResponse(status_code=e.status_code, content={
+                    "message": "Invalid email format.",
+                    "status_code": 0
+                })
+
+            # Prevent primary email or phone from being the same as secondary email or phone
+            if new_email2 and exist_student_email == new_email2:
+                return JSONResponse(status_code=200, content={
+                    "message": "Secondary email cannot be the same as primary email.",
+                    "status_code": 0
+                })
+
+            if new_phone2 and exist_student_phone == new_phone2:
+                return JSONResponse(status_code=200, content={
+                    "message": "Secondary phone cannot be the same as primary phone.",
+                    "status_code": 0
+                })
+
+
+            # Check for duplicate email & phone in another student’s profile
+            email2 = profile_updates.get("email2")
+            phone2 = profile_updates.get("phone2")
+
+            if email2 and phone2 and email2 == phone2:
+                return JSONResponse(status_code=200, content={
+                    "message": "Email2 and Phone2 cannot be the same.",
+                    "status_code": 0
+                })
+
+            existing_student = await profile_collection.find_one({
+                "$or": [
+                    {"email": email2},
+                    {"email2": email2},
+                    {"phone": phone2},
+                    {"phone2": phone2}
+                ],
+                "student_id": {"$ne": student_id}  # Exclude the current student
             })
 
+            print(existing_student, "existing_student")
+            if existing_student:
+                return JSONResponse(status_code=200, content={
+                    "message": "Email2 or Phone2 is already attached to another account.",
+                    "status_code": 0
+                })
+            
+        
+        # Ensure the request body is not empty
         if not profile_updates:
             return JSONResponse(status_code=200, content={
                 "message": "Request body cannot be empty.",
                 "status_code": 0
             })
-
-        # Check for duplicate email & phone
-        email1 = profile_updates.get("email")
-        email2 = profile_updates.get("email2")
-        phone1 = profile_updates.get("phone")
-        phone2 = profile_updates.get("phone2")
-
-        # Validate that emails and phones are unique
-        if (email1 and email2 and email1 == email2) or (phone1 and phone2 and phone1 == phone2):
+        
+        # Prevent updating restricted fields
+        restricted_fields = ["student_id", "email", "phone"]
+        if any(field in profile_updates for field in restricted_fields):
             return JSONResponse(status_code=200, content={
-                "message": "Email1 and Email2 or Phone1 and Phone2 should not be the same.",
+                "message": "student_id, primary email, and primary phone cannot be updated.",
                 "status_code": 0
             })
-
-        # Check if email or phone exists in another account
-        existing_student = await profile_collection.find_one({
-            "$or": [
-                {"email": {"$in": [email1, email2]}},
-                {"email2": {"$in": [email1, email2]}},
-                {"phone": {"$in": [phone1, phone2]}},
-                {"phone2": {"$in": [phone1, phone2]}}
-            ],
-            "student_id": {"$ne": student_id}  # Exclude the current student
-        })
-
-        if existing_student:
-            return JSONResponse(status_code=200, content={
-                "message": "Email or Phone is already attached to another account.",
-                "status_code": 0
-            })
-
-        # Handle PATCH method by removing `None` values
-        if request.method == "PATCH":
-            profile_updates = {k: v for k, v in profile_updates.items() if v is not None}
-
-            if not profile_updates:
-                return JSONResponse(status_code=200, content={
-                    "message": "No valid fields provided for update.",
-                    "status_code": 0
-                })
 
         # Update student profile
         result = await profile_collection.update_one(
@@ -367,15 +394,15 @@ async def update_student(student_id: int, request: Request):
             "profile": updated_user
         })
 
-    except HTTPException as http_exc:
-        raise http_exc  # Pass through FastAPI exceptions
+    # except HTTPException as http_exc:
+    #     raise http_exc  # Pass through FastAPI exceptions
 
-    except Exception as e:
-        return JSONResponse(status_code=200, content={
-            "message": "Error updating profile.",
-            "status_code": 0
-        })
-
+    # except Exception as e:
+    #     print(f"Error updating profile: {str(e)}")  # Log error details
+    #     return JSONResponse(status_code=500, content={
+    #         "message": "Internal server error while updating profile.",
+    #         "status_code": 0
+    #     })
 
 
 # Send OTP to the user
@@ -544,106 +571,51 @@ async def verify_otp(verify_otp: Veryfy_OTP):
 
 
 # Download - Resume
-@app.post("/download_resume")
-async def download_resume(payload: DownloadResume):
-    try:
-        student_id = payload.student_id
-        print(student_id, "student_id")
-        profile = await profile_collection.find_one({"student_id": student_id})
+# @app.post("/download_resume")
+# async def download_resume(payload: DownloadResume):
+#     try:
+#         student_id = payload.student_id
+#         print(student_id, "student_id")
+#         profile = await profile_collection.find_one({"student_id": student_id})
 
-        print(profile, "profile")
-        if not profile:
-            # raise HTTPException(status_code=404, detail="Profile not found")
-            return JSONResponse(status_code=200, content={
-                "message": "Profile not found",
-                "status_code": 0
-            })
+#         print(profile, "profile")
+#         if not profile:
+#             # raise HTTPException(status_code=404, detail="Profile not found")
+#             return JSONResponse(status_code=200, content={
+#                 "message": "Profile not found",
+#                 "status_code": 0
+#             })
 
-        # Get the resume Base64 data
-        resume_base64 = profile.get("resume_name")
-        if not resume_base64:
-            # raise HTTPException(status_code=200, detail="Resume not found for this profile")
-            return JSONResponse(status_code=200, content={
-                "message": "Resume not found for this profile.",
-                "status_code": 0
-            })
+#         # Get the resume Base64 data
+#         resume_base64 = profile.get("resume_name")
+#         if not resume_base64:
+#             # raise HTTPException(status_code=200, detail="Resume not found for this profile")
+#             return JSONResponse(status_code=200, content={
+#                 "message": "Resume not found for this profile.",
+#                 "status_code": 0
+#             })
 
-        # Decode Base64 to binary
-        try:
-            resume_bytes = base64.b64decode(resume_base64)
-        except Exception as e:
-            # raise HTTPException(status_code=200, detail=f"Failed to decode resume.")
-            return JSONResponse(status_code=200, content={
-                "message": f"Failed to decode resume.",
-                "status_code": 0
-            })
+#         # Decode Base64 to binary
+#         try:
+#             resume_bytes = base64.b64decode(resume_base64)
+#         except Exception as e:
+#             # raise HTTPException(status_code=200, detail=f"Failed to decode resume.")
+#             return JSONResponse(status_code=200, content={
+#                 "message": f"Failed to decode resume.",
+#                 "status_code": 0
+#             })
 
-        # Return PDF file as response
-        return StreamingResponse(
-            io.BytesIO(resume_bytes),
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={profile.get('full_name', 'resume')}.pdf"}
-        )
-    except Exception as e:
-        return JSONResponse(status_code=200, content={
-                "message": f"Internal server error.",
-                "status_code": 0
-            })
-
-
-# Admin - Login
-@app.post("/admin_login")
-async def admin_login(admin: Admin):
-    try:
-        if not admin.email or not admin.password:
-            # raise HTTPException(status_code=200, detail="email or password missing.")
-            return JSONResponse(status_code=200, content={
-                "message": "email or password missing.",
-                "status_code": 0
-            })
-
-        admin_user = await admin_collection.find_one({"email": admin.email})
-
-        if not admin_user:
-            # raise HTTPException(status_code=200, detail="Admin user not found.")
-            return JSONResponse(status_code=200, content={
-                "message": "Admin user not found.",
-                "status_code": 0
-            })
-
-        if admin.password != admin_user.get("password"):
-            # raise HTTPException(status_code=200, detail="Invalid password.")
-            return JSONResponse(status_code=200, content={
-                "message": "Invalid password.",
-                "status_code": 0
-            })
-
-        # Convert MongoDB ObjectId to str
-        admin_user["_id"] = str(admin_user["_id"])
-
-
-        admin_user.pop("password", None)
-        
-        token_data = {
-            "sub": admin_user["_id"],
-            "email": admin.email
-        }
-        access_token = create_access_token(data=token_data)
-
-        return JSONResponse(status_code=200, content={
-                "message": "Successfully logged in.",
-                "status_code": 1,
-                "access_token": access_token,
-                "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
-                "token_type": "bearer",
-                "data": admin_user
-            }
-        )
-    except Exception as e:
-        return JSONResponse(status_code=200, content={
-                "message": f"Internal server error.",
-                "status_code": 0
-        })
+#         # Return PDF file as response
+#         return StreamingResponse(
+#             io.BytesIO(resume_bytes),
+#             media_type="application/pdf",
+#             headers={"Content-Disposition": f"attachment; filename={profile.get('full_name', 'resume')}.pdf"}
+#         )
+#     except Exception as e:
+#         return JSONResponse(status_code=200, content={
+#                 "message": f"Internal server error.",
+#                 "status_code": 0
+#             })
 
 
 
@@ -710,6 +682,7 @@ async def register_sub_student(register_sub_student: RegisterSubStudent):
             "message": f"Internal server.",
             "status_code": 0
         })
+
 
 
 # # GET - SUB - STUDENT DETAILS  -- DUPLICATE
@@ -880,6 +853,106 @@ async def create_activity(activity_path: ActivityPathModule):
 
 
 
+
+                                        # Admin
+
+# Admin - Login                                       
+@app.post("/admin_login")
+async def admin_login(admin: Admin):
+    try:
+        if not admin.email or not admin.password:
+            # raise HTTPException(status_code=200, detail="email or password missing.")
+            return JSONResponse(status_code=200, content={
+                "message": "email or password missing.",
+                "status_code": 0
+            })
+
+        admin_user = await admin_collection.find_one({"email": admin.email})
+
+        if not admin_user:
+            # raise HTTPException(status_code=200, detail="Admin user not found.")
+            return JSONResponse(status_code=200, content={
+                "message": "Admin user not found.",
+                "status_code": 0
+            })
+
+        if admin.password != admin_user.get("password"):
+            # raise HTTPException(status_code=200, detail="Invalid password.")
+            return JSONResponse(status_code=200, content={
+                "message": "Invalid password.",
+                "status_code": 0
+            })
+
+        # Convert MongoDB ObjectId to str
+        admin_user["_id"] = str(admin_user["_id"])
+
+
+        admin_user.pop("password", None)
+        
+        token_data = {
+            "sub": admin_user["_id"],
+            "email": admin.email
+        }
+        access_token = create_access_token(data=token_data)
+
+        return JSONResponse(status_code=200, content={
+                "message": "Successfully logged in.",
+                "status_code": 1,
+                "access_token": access_token,
+                "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
+                "token_type": "bearer",
+                "data": admin_user
+            }
+        )
+    except Exception as e:
+        return JSONResponse(status_code=200, content={
+                "message": f"Internal server error.",
+                "status_code": 0
+        })
+
+
+# GET ALL REGISTER STUDENT
+@app.get("/get_all_register_student")
+async def get_all_register_student(request: Request):
+    # Extract token from Authorization header
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Token is in the form: Bearer <token>
+    token = auth_header.split(" ")[1] if " " in auth_header else None
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Token is missing")
+    
+    # Validate the token
+    payload = validate_token(token)
+    
+    try:
+        # Fetch all students from the database
+        all_students = await profile_collection.find({}, {"_id": 0}).to_list(None)
+        
+        if all_students:
+            return JSONResponse(status_code=200, content={
+                "message": "Successfully retrieved data.",
+                "status_code": 1,
+                "total_student": len(all_students),
+                "data": all_students
+            })
+        else:
+            return JSONResponse(status_code=200, content={
+                "message": "No students found.",
+                "status_code": 0
+            })
+
+    except Exception as e:
+        # Log the error and return an internal server error response
+        return JSONResponse(status_code=200, content={
+            "message": "Internal server error.",
+            "status_code": 0
+        })
+    
 
 # Register Routers
 app.include_router(linkedin_router)

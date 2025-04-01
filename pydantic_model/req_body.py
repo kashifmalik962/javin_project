@@ -65,6 +65,9 @@ class Veryfy_OTP(BaseModel):
 class DownloadResume(BaseModel):
     student_id: int
 
+# class UpdateResume(BaseModel):
+#     resume_name: Optional[str] = None
+
 
                             # ACTIVITY PATH MODULE
 

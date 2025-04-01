@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import re
 from fastapi import HTTPException
+from jose import jwt, JWTError
 
 # Load env
 load_dotenv(find_dotenv(), verbose=True)
@@ -104,3 +105,36 @@ def validation_number(phone: str) -> str:
         return phone_number
 
     raise HTTPException(status_code=200, detail="Invalid phone number format. Use a valid 10-digit number.")
+
+
+def is_valid_email(email):
+    """
+    Validate an email address using a regular expression.
+    """
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    
+    if re.match(email_pattern, email):
+        print("math")
+        return True
+    
+    print(" not mathc")
+    # Instead of returning an exception, raise it
+    raise HTTPException(status_code=200, detail="Invalid email format.")
+
+
+# Validate - Token
+def validate_token(token: str):
+    """
+    Validate the JWT token and return the decoded payload.
+    """
+    try:
+        # Decode the token using the secret key and algorithm
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Optionally, check if token is expired
+        if datetime.utcfromtimestamp(payload["exp"]) < datetime.utcnow():
+            raise HTTPException(status_code=200, detail="Token has expired.")
+        
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=200, detail="Invalid token.")
