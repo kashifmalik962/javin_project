@@ -113,7 +113,7 @@ async def register_student(student: RegisterStudent, request: Request):
         student_data["student_id"] = student_id
         student_data["profile_type"] = "primary"
 
-        # ✅ Fill missing fields with None
+        # Fill missing fields with None
         default_fields = [
             "full_name", "email2", "phone2", "country", "address",
             "resume_name", "linkedin", "current_city", "preferred_city",
@@ -125,6 +125,13 @@ async def register_student(student: RegisterStudent, request: Request):
         for field in default_fields:
             student_data.setdefault(field, None)
 
+        token_data = {
+            "student_id": student_data["student_id"],
+            "email": student_data["email"]
+        }
+
+        access_token = create_access_token(data=token_data)
+
         # Insert student data
         result = await profile_collection.insert_one(student_data)
         inserted_id = result.inserted_id
@@ -133,12 +140,15 @@ async def register_student(student: RegisterStudent, request: Request):
         return JSONResponse(status_code=200, content={
             "message": "Successfully Registered Student.",
             "status_code": 1,
+            "access_token": access_token,
+            "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
+            "token_type": "bearer",
             "data": created_profile
         })
 
     except Exception as e:
         return JSONResponse(status_code=200, content={
-            "message": f"Failed to register.",
+            "message": f"Failed to register. {e}",
             "status_code": 0
         })
 
@@ -195,7 +205,22 @@ async def register_student(student: RegisterStudent, request: Request):
 
 # GET - STUDENT DETAILS
 @app.get("/get_student/{student_id}")
-async def get_student(student_id: int):
+async def get_student(student_id: int, request: Request):
+    # Extract token from Authorization header
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header:
+        raise HTTPException(status_code=200, detail="Authorization header missing")
+    
+    # Token is in the form: Bearer <token>
+    token = auth_header.split(" ")[1] if " " in auth_header else None
+    
+    if not token:
+        raise HTTPException(status_code=200, detail="Token is missing")
+    
+    # Validate the token
+    payload = validate_token(token)
+
     student_details = await profile_collection.find_one({"student_id":student_id}, {"_id": 0, "resume_name":0})
 
     if not student_details:
@@ -214,8 +239,23 @@ async def get_student(student_id: int):
 
 # GET ALL SUB - STUDENTS
 @app.get("/get_all_sub_student/{student_id}")
-async def get_all_sub_student(student_id: int):
+async def get_all_sub_student(student_id: int, request: Request):
     try:
+        # Extract token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        
+        if not auth_header:
+            raise HTTPException(status_code=200, detail="Authorization header missing")
+        
+        # Token is in the form: Bearer <token>
+        token = auth_header.split(" ")[1] if " " in auth_header else None
+        
+        if not token:
+            raise HTTPException(status_code=200, detail="Token is missing")
+        
+        # Validate the token
+        payload = validate_token(token)
+
         sub_student_records = []
 
         # Find parent student
@@ -282,7 +322,22 @@ async def get_all_sub_student(student_id: int):
 # @app.patch("/update_student/{student_id}")
 @app.put("/update_student/{student_id}")
 async def update_student(student_id: int, request: Request):
-    # try:
+    try:
+        # Extract token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        
+        if not auth_header:
+            raise HTTPException(status_code=200, detail="Authorization header missing")
+        
+        # Token is in the form: Bearer <token>
+        token = auth_header.split(" ")[1] if " " in auth_header else None
+        
+        if not token:
+            raise HTTPException(status_code=200, detail="Token is missing")
+        
+        # Validate the token
+        payload = validate_token(token)
+
         # Check if student exists
         exist_student = await profile_collection.find_one({"student_id": student_id})
         if not exist_student:
@@ -394,15 +449,15 @@ async def update_student(student_id: int, request: Request):
             "profile": updated_user
         })
 
-    # except HTTPException as http_exc:
-    #     raise http_exc  # Pass through FastAPI exceptions
+    except HTTPException as http_exc:
+        raise http_exc  # Pass through FastAPI exceptions
 
-    # except Exception as e:
-    #     print(f"Error updating profile: {str(e)}")  # Log error details
-    #     return JSONResponse(status_code=500, content={
-    #         "message": "Internal server error while updating profile.",
-    #         "status_code": 0
-    #     })
+    except Exception as e:
+        print(f"Error updating profile: {str(e)}")  # Log error details
+        return JSONResponse(status_code=500, content={
+            "message": "Internal server error while updating profile.",
+            "status_code": 0
+        })
 
 
 # Send OTP to the user
@@ -918,13 +973,13 @@ async def get_all_register_student(request: Request):
     auth_header = request.headers.get("Authorization")
     
     if not auth_header:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
+        raise HTTPException(status_code=200, detail="Authorization header missing")
     
     # Token is in the form: Bearer <token>
     token = auth_header.split(" ")[1] if " " in auth_header else None
     
     if not token:
-        raise HTTPException(status_code=401, detail="Token is missing")
+        raise HTTPException(status_code=200, detail="Token is missing")
     
     # Validate the token
     payload = validate_token(token)
