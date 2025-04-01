@@ -14,7 +14,8 @@ load_dotenv(find_dotenv(), verbose=True)
 
 account_sid = os.getenv("TWILIO_ACCOUNT_SID")
 auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60))
+STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES", 43200))
+ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
@@ -23,7 +24,7 @@ if not SECRET_KEY:
 
 print(SECRET_KEY, type(SECRET_KEY))
 print(ALGORITHM, type(ALGORITHM))
-print(ACCESS_TOKEN_EXPIRE_MINUTES, type(ACCESS_TOKEN_EXPIRE_MINUTES))
+print(STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES, type(STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES))
 
 def send_watsapp_message(phone, otp_code):
     try:
@@ -66,11 +67,17 @@ def decode_base64(encoded_password):
     return decoded_string
 
 
-def create_access_token(data: dict):
+def create_access_token(data: dict, type="student"):
+    if type == "admin":
+        print(ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES, "ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES")
+        access_token_expires = timedelta(minutes=ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES)
+    else:
+        print(STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES, "STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES")
+        access_token_expires = timedelta(minutes=STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES)
+
     # print(f"Encoding JWT with algorithm: {ALGORITHM}")
-    # print(f"Encoding JWT with ACCESS_TOKEN_EXPIRE_MINUTES: {ACCESS_TOKEN_EXPIRE_MINUTES}")
+    # print(f"Encoding JWT with STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES: {STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES}")
     # print(f"Encoding JWT with SECRET_KEY: {SECRET_KEY}")
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = data.copy()
 
     expire = datetime.utcnow() + access_token_expires

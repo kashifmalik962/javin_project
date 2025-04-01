@@ -97,7 +97,7 @@ async def register_student(student: RegisterStudent, request: Request):
         # Check if student already exists
         existing_student = await profile_collection.find_one({
             "$or": [{"email": student.email}, {"email2": student.email},
-                    {"phone": student.phone}, {"phone2": student.phone}]
+                    {"phone": valid_phone}, {"phone2": valid_phone}]
         })
         if existing_student:
             return JSONResponse(status_code=200, content={
@@ -137,13 +137,28 @@ async def register_student(student: RegisterStudent, request: Request):
         inserted_id = result.inserted_id
 
         created_profile = await profile_collection.find_one({"_id": inserted_id}, {"_id": 0})
+
+        # Profile Completeness in percentage
+        number_of_fields = len(created_profile)
+        null_fields = [key for key, value in created_profile.items() if value is None]
+        # print(number_of_fields, len(null_fields), "number_of_fields, null_fields")
+        # print(100 - ((len(null_fields)/number_of_fields)*100))
+        completeness_precent = 100 - ((len(null_fields)/number_of_fields)*100)
+        update_profile_complete = await profile_collection.update_one(
+            {"_id": inserted_id}, 
+            {"$set": {"profile_complete": completeness_precent}}
+        )
+
+        # Fetch updated profile with profile completeness after the update
+        updated_profile = await profile_collection.find_one({"_id": inserted_id}, {"_id": 0})
+
         return JSONResponse(status_code=200, content={
             "message": "Successfully Registered Student.",
             "status_code": 1,
             "access_token": access_token,
-            "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
+            "token_expire_minute": STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES,
             "token_type": "bearer",
-            "data": created_profile
+            "data": updated_profile
         })
 
     except Exception as e:
@@ -191,7 +206,7 @@ async def register_student(student: RegisterStudent, request: Request):
 #             "message": "Successfully logged in.",
 #             "status_code": 1,
 #             "access_token": access_token,
-#             "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
+#             "token_expire_minute": STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES,
 #             "token_type": "bearer",
 #             "data": profile_details
 #         })
@@ -443,10 +458,23 @@ async def update_student(student_id: int, request: Request):
         # Fetch updated user data
         updated_user = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
 
+         # Profile Completeness in percentage
+        number_of_fields = len(updated_user)
+        null_fields = [key for key, value in updated_user.items() if value is None]
+
+        completeness_precent = 100 - ((len(null_fields)/number_of_fields)*100)
+        update_profile_complete = await profile_collection.update_one(
+            {"student_id": student_id},
+            {"$set": {"profile_complete": completeness_precent}}
+        )
+
+        # Fetch updated profile with profile completeness after the update
+        updated_profile = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
+
         return JSONResponse(status_code=200, content={
             "message": "Profile updated successfully!",
             "status_code": 1,
-            "profile": updated_user
+            "profile": updated_profile
         })
 
     except HTTPException as http_exc:
@@ -454,8 +482,8 @@ async def update_student(student_id: int, request: Request):
 
     except Exception as e:
         print(f"Error updating profile: {str(e)}")  # Log error details
-        return JSONResponse(status_code=500, content={
-            "message": "Internal server error while updating profile.",
+        return JSONResponse(status_code=200, content={
+            "message": f"Internal server error while updating profile.",
             "status_code": 0
         })
 
@@ -608,7 +636,7 @@ async def verify_otp(verify_otp: Veryfy_OTP):
             "message": "Successfully logged in.",
             "status_code": 1,
             "access_token": access_token,
-            "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
+            "token_expire_minute": STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES,
             "token_type": "bearer",
             "data": stu_profile
         })
@@ -948,13 +976,13 @@ async def admin_login(admin: Admin):
             "sub": admin_user["_id"],
             "email": admin.email
         }
-        access_token = create_access_token(data=token_data)
+        access_token = create_access_token(data=token_data, type="admin")
 
         return JSONResponse(status_code=200, content={
                 "message": "Successfully logged in.",
                 "status_code": 1,
                 "access_token": access_token,
-                "token_expire_minute": ACCESS_TOKEN_EXPIRE_MINUTES,
+                "token_expire_minute": ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES,
                 "token_type": "bearer",
                 "data": admin_user
             }
