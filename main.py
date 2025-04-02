@@ -36,7 +36,7 @@ templates = Jinja2Templates(directory="templates")
 
 
 # MongoDB connection
-MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik962:gYxgUGO6622a1cRr@cluster0.aad1d.mongodb.net/node_mongo_crud?")
+MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik2786:BhWKQzVyaxRfzNti@cluster0.ctpzucp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "student_profile")
 PORT = int(os.getenv("PORT", 8000))
 
@@ -335,15 +335,20 @@ async def update_student(student_id: int, request: Request):
                 "message": "student_id, primary email, primary phone, active and profile_type cannot be updated.",
                 "status_code": 0
             })
+        
+        # Update student profile
+        result = await profile_collection.update_one(
+            {"student_id": student_id},
+            {"$set": profile_updates}
+        )
 
         # Fetch updated user data
         updated_user = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
          # Profile Completeness in percentage
         number_of_fields = len(updated_user)
         null_fields = [key for key, value in updated_user.items() if value is None]
+        completeness_precent = round(100 - ((len(null_fields)/number_of_fields)*100),2)
 
-        completeness_precent = 100 - ((len(null_fields)/number_of_fields)*100)
-        
         profile_updates["profile_complete"] = completeness_precent
         update_profile_complete = await profile_collection.update_one(
             {"student_id": student_id},
@@ -554,7 +559,7 @@ async def register_sub_student(register_sub_student: RegisterSubStudent, request
 
 
 
-# Send OTP to the user
+# Send OTP to the student
 @app.post("/student/send_otp")
 async def send_otp_watsapp(phone: Send_Otp_Number):
     if phone.type == "watsapp":
@@ -583,10 +588,14 @@ async def send_otp_watsapp(phone: Send_Otp_Number):
 
             print(final_number, "final_number")
             # Check if phone number exists in the database
-            user = await profile_collection.find_one({"phone": final_number, "profile_type": "primary"})
-            if not user:
+            student = await profile_collection.find_one({"phone": final_number, "profile_type": "primary"})
+            if not student:
                 raise HTTPException(status_code=200, detail="Student Phone number not found.")
 
+            student_active = student.get("active")
+            if student_active != "true":
+                raise HTTPException(status_code=200, detail="Student Inactivated from Admin side.")
+            
             # Generate 6-digit OTP
             otp_code = random.randint(100000, 999999)
 
@@ -625,6 +634,9 @@ async def send_otp_watsapp(phone: Send_Otp_Number):
             if not number:
                 raise HTTPException(status_code=200, detail="Phone number not found.")
             
+            student_active = number.get("active")
+            if student_active != "true":
+                raise HTTPException(status_code=200, detail="Student Inactivated from Admin side.")
             # Generate 6-digit OTP
             otp_code = random.randint(100000, 999999)
 
@@ -655,48 +667,6 @@ async def send_otp_watsapp(phone: Send_Otp_Number):
         except Exception as e:
             raise HTTPException(status_code=200, detail=f"Internal server error.")
 
-
-
-# @app.post("/student/send_otp_sms")
-# async def send_otp_sms(phone: Send_Otp_Number):
-#     try:
-#         # Validate phone number
-#         valid_phone = validation_number(phone.phone)
-
-#         # Check if phone number exists in the database
-#         number = await profile_collection.find_one({"phone": valid_phone, "profile_type": "primary"})
-#         if not number:
-#             raise HTTPException(status_code=200, detail="Phone number not found.")
-        
-#         # Generate 6-digit OTP
-#         otp_code = random.randint(100000, 999999)
-
-#         otp_data = {
-#             "phone": valid_phone,  
-#             "otp": encode_base64(str(otp_code)),  # Store encoded OTP
-#             "expires_at": datetime.utcnow() + timedelta(minutes=5)  # Expiry in 5 minutes
-#         }
-
-#         # Delete old OTP (if exists) to avoid duplicates
-#         await otp_collection.delete_one({"phone": valid_phone})
-
-#         # Insert new OTP
-#         await otp_collection.insert_one(otp_data)
-
-#         # Send OTP via SMS
-#         try:
-#             send_sms_message(valid_phone, otp_code)  # Send only raw OTP
-#             return JSONResponse(status_code=200, content={
-#                 "message": f"OTP sent to {valid_phone} via SMS",
-#                 "status_code": 1
-#             })
-#         except Exception as e:
-#             raise HTTPException(status_code=200, detail=f"SMS sending failed.")
-
-#     except HTTPException as e:
-#         raise e  # Let FastAPI handle known exceptions
-#     except Exception as e:
-#         raise HTTPException(status_code=200, detail=f"Internal server error.")
 
 
 # VERIFY - OTP
@@ -760,6 +730,50 @@ async def verify_otp(verify_otp: Veryfy_OTP):
             "message": f"Internal server error: {str(e)}",
             "status_code": 0
         })
+
+
+# @app.post("/student/send_otp_sms")
+# async def send_otp_sms(phone: Send_Otp_Number):
+#     try:
+#         # Validate phone number
+#         valid_phone = validation_number(phone.phone)
+
+#         # Check if phone number exists in the database
+#         number = await profile_collection.find_one({"phone": valid_phone, "profile_type": "primary"})
+#         if not number:
+#             raise HTTPException(status_code=200, detail="Phone number not found.")
+        
+#         # Generate 6-digit OTP
+#         otp_code = random.randint(100000, 999999)
+
+#         otp_data = {
+#             "phone": valid_phone,  
+#             "otp": encode_base64(str(otp_code)),  # Store encoded OTP
+#             "expires_at": datetime.utcnow() + timedelta(minutes=5)  # Expiry in 5 minutes
+#         }
+
+#         # Delete old OTP (if exists) to avoid duplicates
+#         await otp_collection.delete_one({"phone": valid_phone})
+
+#         # Insert new OTP
+#         await otp_collection.insert_one(otp_data)
+
+#         # Send OTP via SMS
+#         try:
+#             send_sms_message(valid_phone, otp_code)  # Send only raw OTP
+#             return JSONResponse(status_code=200, content={
+#                 "message": f"OTP sent to {valid_phone} via SMS",
+#                 "status_code": 1
+#             })
+#         except Exception as e:
+#             raise HTTPException(status_code=200, detail=f"SMS sending failed.")
+
+#     except HTTPException as e:
+#         raise e  # Let FastAPI handle known exceptions
+#     except Exception as e:
+#         raise HTTPException(status_code=200, detail=f"Internal server error.")
+
+
 
 
 # Download - Resume

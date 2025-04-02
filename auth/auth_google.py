@@ -40,7 +40,7 @@ fs = None
 profile_collection = None
 
 # MongoDB connection
-MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik962:gYxgUGO6622a1cRr@cluster0.aad1d.mongodb.net/node_mongo_crud?")
+MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik2786:BhWKQzVyaxRfzNti@cluster0.ctpzucp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "student_profile")
 
 async def connect_to_mongo():
@@ -128,13 +128,20 @@ async def google_callback(request: Request):
         if not email:
             raise HTTPException(status_code=200, detail="Email not found in Google response")
 
-        existing_user = await profile_collection.find_one({"email": email})
+        # existing_user = await profile_collection.find_one({"email": email})
+        existing_user = await profile_collection.find_one({
+            "$or": [{"email": email}, {"email2": email}]
+        })
 
         if existing_user:
+            print(existing_user, "existing_user")
+            student_active = existing_user.get("active")
+            if student_active != "true":
+                raise HTTPException(status_code=200, detail="Student Inactivated from Admin side.")
+            
             user_data = serialize_mongo_document(existing_user)
             token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
             
-            print(user_data, "user_data ++++++++++++++++++++++")
             jwt_payload = {
                 "full_name": user_data["full_name"],
                 "email": user_data["email"],
