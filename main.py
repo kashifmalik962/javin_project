@@ -422,7 +422,7 @@ async def delete_student(student_id: int, request: Request):
 
 
 # REGISTER - SUB - STUDENT
-@app.post("/register_sub_student")
+@app.post("/student/register_sub_student")
 async def register_sub_student(register_sub_student: RegisterSubStudent, request:Request):
     try:
         # Extract token from Authorization header
@@ -700,7 +700,7 @@ async def send_otp_watsapp(phone: Send_Otp_Number):
 
 
 # VERIFY - OTP
-@app.post("/verify_otp")
+@app.post("/student/verify_otp")
 async def verify_otp(verify_otp: Veryfy_OTP):
     try:
         if not verify_otp.phone or not verify_otp.otp:
