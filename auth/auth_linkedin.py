@@ -97,7 +97,7 @@ async def linkedin_login():
     return RedirectResponse(auth_url)
 
 # ✅ LinkedIn Callback Route
-@router.get("/auth/linkedin/callback")
+@router.get("/auth/linkedin/callback", include_in_schema=False)
 async def linkedin_callback(request: Request):
     """Handle LinkedIn OAuth Callback"""
     code = request.query_params.get("code")
@@ -136,6 +136,7 @@ async def linkedin_callback(request: Request):
         # 🔹 Extract user details
         full_name = user_data.get("name", "Unknown User")  # Ensure default values
         email = user_data.get("email")
+        picture = user_data.get("picture")
 
         if not email:
             raise HTTPException(status_code=200, detail="Email not found in LinkedIn response")
@@ -154,7 +155,7 @@ async def linkedin_callback(request: Request):
                 "exp": token_expiry  # Ensure token expiration
             }
             jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
-            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}"
+            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}&picture={picture}"
             return RedirectResponse(redirect_url)
             # return JSONResponse(status_code=200,content={"token": jwt_token, "user": user_data})
 
@@ -168,7 +169,8 @@ async def linkedin_callback(request: Request):
             "full_name": full_name,
             "email": email,
             "student_id": student_id,
-            "profile_type": "primary"
+            "profile_type": "primary",
+            "picture": picture
         }
 
         # ✅ Fill missing fields with None
@@ -203,7 +205,7 @@ async def linkedin_callback(request: Request):
 
         print(jwt_token, "jwt_token ++")
         # 🔹 Redirect to React App with JWT Token
-        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}"
+        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}&picture={picture}"
         return RedirectResponse(redirect_url)
         # return JSONResponse(status_code=200, content={"token": jwt_token, "user": new_user_serialized})
 

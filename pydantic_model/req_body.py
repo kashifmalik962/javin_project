@@ -55,8 +55,15 @@ class Admin(BaseModel):
     password: str
 
 
+# OTP Choice
+class OTP_Type(str, Enum):
+    watsapp = "watsapp"
+    sms = "sms"
+
 class Send_Otp_Number(BaseModel):
     phone: str
+    type: OTP_Type
+
 
 class Veryfy_OTP(BaseModel):
     phone: str
@@ -86,3 +93,15 @@ class ActivityPathModule(BaseModel):
     options: Optional[Union[List[str], str]] = None
     correct_answer: Optional[str] = None
     mark: Optional[int] = None
+
+
+
+                         # ADMIN
+
+
+class ActiveOption(str, Enum):
+    true = "true"
+    false = "false"
+
+class ChangeStudentActive(BaseModel):
+    active: ActiveOption

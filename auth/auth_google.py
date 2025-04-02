@@ -90,7 +90,7 @@ async def google_login():
     auth_url = f"{GOOGLE_AUTH_URL}?{'&'.join([f'{k}={v}' for k, v in params.items()])}"
     return RedirectResponse(auth_url)
 
-@router.get("/auth/google/callback")
+@router.get("/auth/google/callback", include_in_schema=False)
 async def google_callback(request: Request):
     code = request.query_params.get("code")
     if not code:
@@ -123,8 +123,8 @@ async def google_callback(request: Request):
 
         full_name = user_data.get("name", "Unknown User")
         email = user_data.get("email")
+        picture = user_data.get("picture")
 
-        print(full_name, email, "full_name, email")
         if not email:
             raise HTTPException(status_code=200, detail="Email not found in Google response")
 
@@ -142,7 +142,7 @@ async def google_callback(request: Request):
             }
             jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
             print(full_name, "full_name ===----===")
-            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}"
+            redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}&picture={picture}"
             return RedirectResponse(redirect_url)
             # return JSONResponse(status_code=200,content={"token": jwt_token, "user": user_data})
 
@@ -155,7 +155,8 @@ async def google_callback(request: Request):
             "full_name": full_name,
             "email": email,
             "student_id": student_id,
-            "profile_type": "primary"
+            "profile_type": "primary",
+            "picture": picture
         }
 
         # ✅ Fill missing fields with None
@@ -189,6 +190,6 @@ async def google_callback(request: Request):
         jwt_token = jwt.encode(jwt_payload, SECRET_KEY, algorithm=ALGORITHM)
         print(jwt_token, "jwt_token ++")
 
-        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}"
+        redirect_url = f"{FRONTEND_REDIRECT_URI}?token={jwt_token}&email={email}&name={full_name}&picture={picture}"
         return RedirectResponse(redirect_url)
         # return JSONResponse(status_code=200, content={"token": jwt_token, "user": new_user_serialized})

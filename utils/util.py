@@ -71,10 +71,10 @@ def decode_base64(encoded_password):
 # Generate JWT Token
 def create_access_token(data: dict, type="student"):
     if type == "admin":
-        print(ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES, "ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES")
+        # print(ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES, "ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES")
         access_token_expires = timedelta(minutes=ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES)
     else:
-        print(STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES, "STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES")
+        # print(STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES, "STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES")
         access_token_expires = timedelta(minutes=STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES)
 
     # print(f"Encoding JWT with algorithm: {ALGORITHM}")
@@ -150,7 +150,7 @@ def is_valid_email(email):
 
 
 
-def save_pdf_from_base64(base64_string: str, filename: str, upload_folder=None) -> str:
+def save_pdf_from_base64(base64_string: str, filename: str, upload_folder="static/resumes") -> str:
     try:
         print(upload_folder, "upload_folder")
         pdf_path = os.path.join(upload_folder, filename)
