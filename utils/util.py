@@ -197,4 +197,4 @@ def save_image_from_base64(base64_string: str, filename: str, upload_folder="sta
         return img_path
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error while saving image: {str(e)}")
+        raise HTTPException(status_code=200, detail=f"Error while saving image:")

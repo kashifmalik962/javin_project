@@ -130,7 +130,7 @@ async def register_student(student: RegisterStudent, request: Request):
             "summary_of_profile", "college_background", "current_organization",
             "total_work_experience_years", "comment", "referred_by",
             "current_ctc", "desired_ctc", "github", "leetcode",
-            "codechef", "sub_student_id"
+            "codechef", "sub_student_id", "picture"
         ]
         for field in default_fields:
             student_data.setdefault(field, None)
@@ -159,6 +159,7 @@ async def register_student(student: RegisterStudent, request: Request):
                 print(key, value, "key, value")
                 null_fields.append(key)
 
+        print(null_fields, "null_fields")
         print(number_of_fields, null_fields, "number_of_fields, null_fields")
         print(number_of_fields, len(null_fields), "number_of_fields, null_fields")
         print(100 - ((len(null_fields)/number_of_fields)*100))
@@ -211,7 +212,7 @@ async def get_student(student_id: int, request: Request):
         # Validate the token
         payload = validate_token(token)
 
-        student_details = await profile_collection.find_one({"student_id":student_id}, {"_id": 0})
+        student_details = await profile_collection.find_one({"student_id":student_id})
 
         if not student_details:
             return JSONResponse(status_code=200, content={
@@ -272,6 +273,8 @@ async def update_student(student_id: int, request: Request):
                 "message": "Request body cannot be empty.",
                 "status_code": 0
             })
+        
+        # Handle Resume PDF
         update_changes = False
         if profile_updates.get("resume_name"):
             # full_name = profile_updates.get("full_name")
@@ -286,7 +289,8 @@ async def update_student(student_id: int, request: Request):
             file_url = f"https://javin-project.onrender.com/static/resumes/{filename}"
             profile_updates["resume_name"] = file_url
             update_changes = True
-
+        
+        # Handle Image
         if profile_updates.get("picture"):
             base64_image = profile_updates.get("picture")
             image_filename = f"{student_id}_profile.jpg"
@@ -380,14 +384,17 @@ async def update_student(student_id: int, request: Request):
         number_of_fields = len(created_profile)
         rest_feilds = ["email", "phone", "sub_student_id", "referred_by", "profile_type", "active", "student_id"]
         number_of_fields = len(created_profile) - len(rest_feilds)
-        print(created_profile, "created_profile")
+        print(number_of_fields, "number_of_fields")
+        print(created_profile, "created_profile hai")
         # null_fields = [key for key, value in created_profile.items() if value is None]
         null_fields = []
         for key, value in created_profile.items():
+            # print("loop..")
             if value is None and key not in rest_feilds:
                 print(key, value, "key, value")
                 null_fields.append(key)
 
+        print(null_fields, "null_fields")
         completeness_precent = round(100 - ((len(null_fields)/number_of_fields)*100),2)
 
         profile_updates["profile_complete"] = completeness_precent
@@ -395,11 +402,11 @@ async def update_student(student_id: int, request: Request):
             {"student_id": student_id},
             {"$set": profile_updates}
         )
-        if update_profile_complete.modified_count == 0 and update_changes!=True:
-            return JSONResponse(status_code=200, content={
-                "message": "No changes made to the profile.",
-                "status_code": 0
-            })
+        # if update_profile_complete.modified_count == 0 and update_changes!=True:
+        #     return JSONResponse(status_code=200, content={
+        #         "message": "No changes made to the profile.",
+        #         "status_code": 0
+        #     })
         
         # Fetch updated profile with profile completeness after the update
         updated_profile = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
@@ -996,7 +1003,6 @@ async def create_activity(activity_path: ActivityPathModule):
                 {"question": activity_path.question}
                 ]
             }):
-            # raise HTTPException(status_code=409, detail="question already exists.")
             return JSONResponse(status_code=200, content={
                 "message": "question already exists.",
                 "status_code": 0
@@ -1027,7 +1033,6 @@ async def create_activity(activity_path: ActivityPathModule):
         raise http_exc  # Pass through FastAPI exceptions
 
     except Exception as e:
-        # raise HTTPException(status_code=500, detail=f"Internal server error.")
         return JSONResponse(status_code=200, content={
             "message": f"Internal server error.",
             "status_code": 0
@@ -1153,9 +1158,7 @@ async def get_all_sub_student(student_id: int, request: Request):
         # Fetch all sub-student records
         for sub_student_id in range(len(sub_student_ids)):
             sub_student_itr = await profile_collection.find_one(
-                {"student_id": sub_student_ids[sub_student_id]},
-                {"resume_name":0}
-                )
+                {"student_id": sub_student_ids[sub_student_id]})
 
             if sub_student_itr:
                 sub_student_itr["_id"] = str(sub_student_itr["_id"])  # Convert ObjectId to string

@@ -185,7 +185,7 @@ async def linkedin_callback(request: Request):
             "summary_of_profile", "college_background", "current_organization",
             "total_work_experience_years", "comment", "referred_by",
             "current_ctc", "desired_ctc", "github", "leetcode",
-            "codechef", "sub_student_id"
+            "codechef", "sub_student_id", "picture"
         ]
 
         for field in default_fields:
