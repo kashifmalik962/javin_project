@@ -112,6 +112,7 @@ def validate_token(token: str):
 
 # Validate phone number
 def validation_number(phone: str) -> str:
+    print(phone, "phone")
     phone_number = phone.strip()  # Remove spaces
 
     if not phone_number:

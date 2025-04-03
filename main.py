@@ -300,6 +300,7 @@ async def update_student(student_id: int, request: Request):
             update_changes = True
 
         if profile_updates.get("email2") or profile_updates.get("phone2"):
+            print("profile_updates.get(phone2)")
             # Get existing student details
             exist_student_email = exist_student.get("email") 
             exist_student_phone = exist_student.get("phone")
@@ -311,14 +312,15 @@ async def update_student(student_id: int, request: Request):
             
             try:
                 # Validate email and phone
-                if new_email2:
-                    is_valid_email(new_email2)  # Validate email format
-                if new_phone2:
-                    validation_number(new_phone2)  # Assuming validation_number is already implemented
+                # if new_email2:
+                is_valid_email(new_email2)  # Validate email format
+                # if new_phone2:
+                    # print("validation_number")
+                validation_number(new_phone2)  # Assuming validation_number is already implemented
             except HTTPException as e:
                 # Handle validation errors
-                return JSONResponse(status_code=e.status_code, content={
-                    "message": "Invalid email format.",
+                return JSONResponse(status_code=200, content={
+                    "message": "Invalid email and number format.",
                     "status_code": 0
                 })
 
@@ -365,10 +367,10 @@ async def update_student(student_id: int, request: Request):
             
         
         # Prevent updating restricted fields
-        restricted_fields = ["student_id", "email", "phone", "active", "profile_type"]
+        restricted_fields = ["student_id", "email", "phone", "active", "profile_type", "profile_complete"]
         if any(field in profile_updates for field in restricted_fields):
             return JSONResponse(status_code=200, content={
-                "message": "student_id, primary email, primary phone, active and profile_type cannot be updated.",
+                "message": "student_id, primary email, primary phone, active, profile_type, profile_complete cannot be updated.",
                 "status_code": 0
             })
         
@@ -390,7 +392,7 @@ async def update_student(student_id: int, request: Request):
         null_fields = []
         for key, value in created_profile.items():
             # print("loop..")
-            if value is None and key not in rest_feilds:
+            if (value is None or value == "") and key not in rest_feilds:
                 print(key, value, "key, value")
                 null_fields.append(key)
 
@@ -754,7 +756,7 @@ async def verify_otp(verify_otp: Veryfy_OTP):
         await otp_collection.delete_many({"phone": phone_number})
 
         # ✅ Fetch student profile (excluding _id)
-        stu_profile = await profile_collection.find_one({"phone": phone_number}, {"_id": 0, "resume_name": 0})
+        stu_profile = await profile_collection.find_one({"phone": phone_number}, {"_id": 0})
         
         token_data = {
             "student_id": stu_profile.get("student_id"),
