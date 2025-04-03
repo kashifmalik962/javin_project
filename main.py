@@ -41,7 +41,9 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "student_profile")
 PORT = int(os.getenv("PORT", 8000))
 
 UPLOAD_FOLDER = "static/resumes"
+IMAGE_FOLDER = "static/images"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
 # Mount the static folder
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -147,10 +149,19 @@ async def register_student(student: RegisterStudent, request: Request):
         created_profile = await profile_collection.find_one({"_id": inserted_id}, {"_id": 0})
 
         # Profile Completeness in percentage
-        number_of_fields = len(created_profile)
-        null_fields = [key for key, value in created_profile.items() if value is None]
-        # print(number_of_fields, len(null_fields), "number_of_fields, null_fields")
-        # print(100 - ((len(null_fields)/number_of_fields)*100))
+        rest_feilds = ["email", "phone", "sub_student_id", "referred_by", "profile_type", "active", "student_id"]
+        number_of_fields = len(created_profile) - len(rest_feilds)
+        print(created_profile, "created_profile")
+        # null_fields = [key for key, value in created_profile.items() if value is None]
+        null_fields = []
+        for key, value in created_profile.items():
+            if value is None and key not in rest_feilds:
+                print(key, value, "key, value")
+                null_fields.append(key)
+
+        print(number_of_fields, null_fields, "number_of_fields, null_fields")
+        print(number_of_fields, len(null_fields), "number_of_fields, null_fields")
+        print(100 - ((len(null_fields)/number_of_fields)*100))
         completeness_precent = 100 - ((len(null_fields)/number_of_fields)*100)
         update_profile_complete = await profile_collection.update_one(
             {"_id": inserted_id}, 
@@ -169,6 +180,9 @@ async def register_student(student: RegisterStudent, request: Request):
             "data": updated_profile
         })
 
+    except HTTPException as http_exc:
+        raise http_exc  # Pass through FastAPI exceptions
+
     except Exception as e:
         return JSONResponse(status_code=200, content={
             "message": f"Failed to register. {e}",
@@ -181,35 +195,45 @@ async def register_student(student: RegisterStudent, request: Request):
 # GET - STUDENT DETAILS
 @app.get("/student/{student_id}")
 async def get_student(student_id: int, request: Request):
-    # Extract token from Authorization header
-    auth_header = request.headers.get("Authorization")
-    
-    if not auth_header:
-        raise HTTPException(status_code=200, detail="Authorization header missing")
-    
-    # Token is in the form: Bearer <token>
-    token = auth_header.split(" ")[1] if " " in auth_header else None
-    
-    if not token:
-        raise HTTPException(status_code=200, detail="Token is missing")
-    
-    # Validate the token
-    payload = validate_token(token)
+    try:
+        # Extract token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        
+        if not auth_header:
+            raise HTTPException(status_code=200, detail="Authorization header missing")
+        
+        # Token is in the form: Bearer <token>
+        token = auth_header.split(" ")[1] if " " in auth_header else None
+        
+        if not token:
+            raise HTTPException(status_code=200, detail="Token is missing")
+        
+        # Validate the token
+        payload = validate_token(token)
 
-    student_details = await profile_collection.find_one({"student_id":student_id}, {"_id": 0, "resume_name":0})
+        student_details = await profile_collection.find_one({"student_id":student_id}, {"_id": 0, "resume_name":0})
 
-    if not student_details:
+        if not student_details:
+            return JSONResponse(status_code=200, content={
+                "message": "students does not exists.",
+                "status_code": 0
+            })
+            # raise HTTPException(status_code=200, detail="students does not exists.")
+
         return JSONResponse(status_code=200, content={
-            "message": "students does not exists.",
+            "message": "successfully data recieved.",
+            "status_code": 1,
+            "data": student_details
+        })
+    
+    except HTTPException as http_exc:
+        raise http_exc  # Pass through FastAPI exceptions
+    
+    except Exception as e:
+        return JSONResponse(status_code=200, content={
+            "message": "Internal server error.",
             "status_code": 0
         })
-        # raise HTTPException(status_code=200, detail="students does not exists.")
-
-    return JSONResponse(status_code=200, content={
-        "message": "successfully data recieved.",
-        "status_code": 1,
-        "data": student_details
-    })
 
 
 # UPDATE STUDENT DATA
@@ -261,6 +285,14 @@ async def update_student(student_id: int, request: Request):
             # Generate public URL
             file_url = f"https://javin-project.onrender.com/static/resumes/{filename}"
             profile_updates["resume_name"] = file_url
+            update_changes = True
+
+        if profile_updates.get("picture"):
+            base64_image = profile_updates.get("picture")
+            image_filename = f"{student_id}_profile.jpg"
+            img_path = save_image_from_base64(base64_image, image_filename, upload_folder=IMAGE_FOLDER)
+            img_url = f"https://javin-project.onrender.com/static/images/{image_filename}"
+            profile_updates["picture"] = img_url
             update_changes = True
 
         if profile_updates.get("email2") or profile_updates.get("phone2"):
@@ -343,10 +375,19 @@ async def update_student(student_id: int, request: Request):
         )
 
         # Fetch updated user data
-        updated_user = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
+        created_profile = await profile_collection.find_one({"student_id": student_id}, {"_id": 0})
          # Profile Completeness in percentage
-        number_of_fields = len(updated_user)
-        null_fields = [key for key, value in updated_user.items() if value is None]
+        number_of_fields = len(created_profile)
+        rest_feilds = ["email", "phone", "sub_student_id", "referred_by", "profile_type", "active", "student_id"]
+        number_of_fields = len(created_profile) - len(rest_feilds)
+        print(created_profile, "created_profile")
+        # null_fields = [key for key, value in created_profile.items() if value is None]
+        null_fields = []
+        for key, value in created_profile.items():
+            if value is None and key not in rest_feilds:
+                print(key, value, "key, value")
+                null_fields.append(key)
+
         completeness_precent = round(100 - ((len(null_fields)/number_of_fields)*100),2)
 
         profile_updates["profile_complete"] = completeness_precent
@@ -500,6 +541,10 @@ async def register_sub_student(register_sub_student: RegisterSubStudent, request
             "status_code": 1,
             "data": created_profile
         })
+    
+    except HTTPException as http_exc:
+        raise http_exc  # Pass through FastAPI exceptions
+    
     except Exception as e:
         # raise HTTPException(status_code=200, detail=f"Internal server.")
         return JSONResponse(status_code=200, content={
@@ -1041,6 +1086,10 @@ async def admin_login(admin: Admin):
                 "data": admin_user
             }
         )
+    
+    except HTTPException as http_exc:
+        raise http_exc  # Pass through FastAPI exceptions
+    
     except Exception as e:
         return JSONResponse(status_code=200, content={
                 "message": f"Internal server error.",
@@ -1071,7 +1120,7 @@ async def get_all_sub_student(student_id: int, request: Request):
         sub_student_records = []
 
         # Find parent student
-        profile_data = await profile_collection.find_one({"student_id": student_id}, {"resume_name":0})
+        profile_data = await profile_collection.find_one({"student_id": student_id})
         if not profile_data:
             # raise HTTPException(status_code=200, detail="Student does not exist.")
             return JSONResponse(status_code=200, content={
@@ -1151,7 +1200,7 @@ async def get_all_register_student(request: Request):
     try:
         # Fetch all students from the database
         all_students = await profile_collection.find({}, {"_id": 0}).to_list(None)
-        
+
         if all_students:
             return JSONResponse(status_code=200, content={
                 "message": "Successfully retrieved data.",
@@ -1162,7 +1211,9 @@ async def get_all_register_student(request: Request):
         else:
             return JSONResponse(status_code=200, content={
                 "message": "No students found.",
-                "status_code": 0
+                "status_code": 1,
+                "total_student": len(all_students),
+                "data": all_students
             })
 
     except HTTPException as http_exc:

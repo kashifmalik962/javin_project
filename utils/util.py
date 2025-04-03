@@ -9,6 +9,8 @@ import re
 from fastapi import HTTPException
 from jose import jwt, JWTError
 from PyPDF2 import PdfReader, PdfWriter
+from io import BytesIO
+from PIL import Image
 
 # Load env
 load_dotenv(find_dotenv(), verbose=True)
@@ -177,3 +179,22 @@ def save_pdf_from_base64(base64_string: str, filename: str, upload_folder="stati
         
     except Exception as e:
         raise HTTPException(status_code=200, detail=f"Error while saving or compressing PDF: {str(e)}")
+
+
+
+def save_image_from_base64(base64_string: str, filename: str, upload_folder="static/images") -> str:
+    try:
+        img_path = os.path.join(upload_folder, filename)
+        
+        # Decode Base64 and save as an image
+        img_bytes = base64.b64decode(base64_string)
+        image = Image.open(BytesIO(img_bytes))
+        
+        # Convert to a common format (JPEG) and save
+        image = image.convert("RGB")
+        image.save(img_path, format="JPEG", quality=85)
+        
+        return img_path
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error while saving image: {str(e)}")
