@@ -211,7 +211,7 @@ async def get_student(student_id: int, request: Request):
         # Validate the token
         payload = validate_token(token)
 
-        student_details = await profile_collection.find_one({"student_id":student_id}, {"_id": 0, "resume_name":0})
+        student_details = await profile_collection.find_one({"student_id":student_id}, {"_id": 0})
 
         if not student_details:
             return JSONResponse(status_code=200, content={
