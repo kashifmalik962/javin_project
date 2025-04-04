@@ -194,7 +194,7 @@ def save_pdf_from_base64(base64_string: str, filename: str, upload_folder="stati
         return pdf_path
 
     except Exception as e:
-        raise HTTPException(status_code=200, detail=f"Error while saving or compressing PDF: {str(e)}")
+        raise HTTPException(status_code=200, detail=f"Error while saving or compressing PDF")
 
 
 def save_image_from_base64(base64_string: str, filename: str, upload_folder="static/images") -> str:
@@ -217,4 +217,4 @@ def save_image_from_base64(base64_string: str, filename: str, upload_folder="sta
         return img_path
     
     except Exception as e:
-        raise HTTPException(status_code=200, detail=f"Error while saving image: {e}")
+        raise HTTPException(status_code=200, detail=f"Error while saving image")
