@@ -19,7 +19,7 @@ router = APIRouter()
 
 # MongoDB connection details
 MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik2786:BhWKQzVyaxRfzNti@cluster0.ctpzucp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "user_profile")
+DATABASE_NAME = os.getenv("DATABASE_NAME", "WTT_DB")
 
 # LinkedIn OAuth Config
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")  

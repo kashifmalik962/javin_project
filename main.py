@@ -38,7 +38,7 @@ templates = Jinja2Templates(directory="templates")
 
 # MongoDB connection
 MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik2786:BhWKQzVyaxRfzNti@cluster0.ctpzucp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "user_profile")
+DATABASE_NAME = os.getenv("DATABASE_NAME", "WTT_DB")
 PORT = int(os.getenv("PORT", 8000))
 
 UPLOAD_FOLDER = "static/resumes"
