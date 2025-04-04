@@ -26,27 +26,27 @@ class Profile(BaseModel):
     github: Optional[str] = None
     leetcode: Optional[str] = None
     codechef: Optional[str] = None
-    sub_student_id: Optional[List[int]] = []
+    sub_user_id: Optional[List[int]] = []
 
 
 # Profile choice
-class RegisterStudentType(str, Enum):
+class RegisterUserType(str, Enum):
     primary = "primary"
     secondary = "secondary"
 
 
-class RegisterStudent(BaseModel):
+class RegisterUser(BaseModel):
     email: EmailStr
     phone: str
 
 
-class RegisterSubStudent(BaseModel):
+class RegisterSubUser(BaseModel):
     email: EmailStr
     phone: str
     parent_id: int
 
 
-class LoginStudent(BaseModel):
+class LoginUser(BaseModel):
     email: EmailStr
     phone: str
 
@@ -57,7 +57,7 @@ class Admin(BaseModel):
 
 # OTP Choice
 class OTP_Type(str, Enum):
-    watsapp = "watsapp"
+    whatsapp = "whatsapp"
     sms = "sms"
 
 class Send_Otp_Number(BaseModel):
@@ -70,7 +70,7 @@ class Veryfy_OTP(BaseModel):
     otp: str
 
 class DownloadResume(BaseModel):
-    student_id: int
+    user_id: int
 
 # class UpdateResume(BaseModel):
 #     resume_name: Optional[str] = None
@@ -103,5 +103,5 @@ class ActiveOption(str, Enum):
     true = "true"
     false = "false"
 
-class ChangeStudentActive(BaseModel):
+class ChangeUserActive(BaseModel):
     active: ActiveOption

@@ -31,7 +31,7 @@ SCOPES = ["openid", "profile", "email"]
 # JWT Secret Key
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-TOKEN_EXPIRE_MINUTES = int(os.getenv("STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+TOKEN_EXPIRE_MINUTES = int(os.getenv("USER_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
 # MongoDB Global Variables
 client = None
@@ -41,14 +41,14 @@ profile_collection = None
 
 # MongoDB connection
 MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik2786:BhWKQzVyaxRfzNti@cluster0.ctpzucp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "student_profile")
+DATABASE_NAME = os.getenv("DATABASE_NAME", "user_profile")
 
 async def connect_to_mongo():
     global client, database, fs, profile_collection
     client = AsyncIOMotorClient(MONGO_DETAILS, maxPoolSize=100)
     database = client[DATABASE_NAME]
     fs = AsyncIOMotorGridFSBucket(database)
-    profile_collection = database["profiles"]
+    profile_collection = database["user_profiles"]
     print("✅ Connected to MongoDB successfully!")
 
 async def close_mongo_connection():
@@ -135,9 +135,9 @@ async def google_callback(request: Request):
 
         if existing_user:
             print(existing_user, "existing_user")
-            student_active = existing_user.get("active")
-            if student_active != "true":
-                raise HTTPException(status_code=200, detail="Student Inactivated from Admin side.")
+            user_active = existing_user.get("active")
+            if user_active != "true":
+                raise HTTPException(status_code=200, detail="user Inactivated from Admin side.")
             
             user_data = serialize_mongo_document(existing_user)
             token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
@@ -154,14 +154,15 @@ async def google_callback(request: Request):
             # return JSONResponse(status_code=200,content={"token": jwt_token, "user": user_data})
 
         
-        last_student = await profile_collection.find_one({}, sort=[("student_id", DESCENDING)])
-        student_id = 101 if last_student is None else last_student["student_id"] + 1
+        last_user = await profile_collection.find_one({}, sort=[("user_id", DESCENDING)])
+        user_id = 101 if last_user is None else last_user["user_id"] + 1
 
         # 🔹 If user does not exist, insert new user
         new_user = {
             "full_name": full_name,
             "email": email,
-            "student_id": student_id,
+            "user_id": user_id,
+            "active": "true",
             "profile_type": "primary",
             "picture": picture
         }
@@ -173,7 +174,7 @@ async def google_callback(request: Request):
             "summary_of_profile", "college_background", "current_organization",
             "total_work_experience_years", "comment", "referred_by",
             "current_ctc", "desired_ctc", "github", "leetcode",
-            "codechef", "sub_student_id", "picture"
+            "codechef", "sub_user_id", "picture"
         ]
 
         for field in default_fields:
@@ -183,6 +184,25 @@ async def google_callback(request: Request):
 
         result = await profile_collection.insert_one(new_user)
         new_user["_id"] = str(result.inserted_id)  # Convert `_id` to string immediately
+
+        created_profile = await profile_collection.find_one({"_id": ObjectId(new_user["_id"])}, {"_id": 0})
+
+        # Profile Completeness in percentage
+        rest_feilds = ["email", "phone", "sub_user_id", "referred_by", "profile_type", "active", "user_id"]
+        number_of_fields = len(created_profile) - len(rest_feilds)
+        # print(created_profile, "created_profile")
+        # null_fields = [key for key, value in created_profile.items() if value is None]
+        null_fields = []
+        for key, value in created_profile.items():
+            if value is None and key not in rest_feilds:
+                print(key, value, "key, value")
+                null_fields.append(key)
+
+        completeness_precent = 100 - ((len(null_fields)/number_of_fields)*100)
+        update_profile_complete = await profile_collection.update_one(
+            {"_id": ObjectId(new_user["_id"])}, 
+            {"$set": {"profile_complete": completeness_precent}}
+        )
 
         new_user_serialized = serialize_mongo_document(new_user)
         token_expiry = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)

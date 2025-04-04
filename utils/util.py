@@ -11,13 +11,16 @@ from jose import jwt, JWTError
 from PyPDF2 import PdfReader, PdfWriter
 from io import BytesIO
 from PIL import Image
+import subprocess
+import platform
+import shutil
 
 # Load env
 load_dotenv(find_dotenv(), verbose=True)
 
 account_sid = os.getenv("TWILIO_ACCOUNT_SID")
 auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES", 43200))
+USER_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("USER_ACCESS_TOKEN_EXPIRE_MINUTES", 43200))
 ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -27,9 +30,9 @@ if not SECRET_KEY:
 
 print(SECRET_KEY, type(SECRET_KEY))
 print(ALGORITHM, type(ALGORITHM))
-print(STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES, type(STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES))
+print(USER_ACCESS_TOKEN_EXPIRE_MINUTES, type(USER_ACCESS_TOKEN_EXPIRE_MINUTES))
 
-def send_watsapp_message(phone, otp_code):
+def send_whatsapp_message(phone, otp_code):
     try:
         client = Client(account_sid, auth_token)
         message = client.messages.create(
@@ -71,16 +74,16 @@ def decode_base64(encoded_password):
 
 
 # Generate JWT Token
-def create_access_token(data: dict, type="student"):
+def create_access_token(data: dict, type="user"):
     if type == "admin":
         # print(ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES, "ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES")
         access_token_expires = timedelta(minutes=ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES)
     else:
-        # print(STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES, "STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES")
-        access_token_expires = timedelta(minutes=STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES)
+        # print(USER_ACCESS_TOKEN_EXPIRE_MINUTES, "USER_ACCESS_TOKEN_EXPIRE_MINUTES")
+        access_token_expires = timedelta(minutes=USER_ACCESS_TOKEN_EXPIRE_MINUTES)
 
     # print(f"Encoding JWT with algorithm: {ALGORITHM}")
-    # print(f"Encoding JWT with STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES: {STUDENT_ACCESS_TOKEN_EXPIRE_MINUTES}")
+    # print(f"Encoding JWT with USER_ACCESS_TOKEN_EXPIRE_MINUTES: {USER_ACCESS_TOKEN_EXPIRE_MINUTES}")
     # print(f"Encoding JWT with SECRET_KEY: {SECRET_KEY}")
     to_encode = data.copy()
 
@@ -152,35 +155,46 @@ def is_valid_email(email):
     raise HTTPException(status_code=200, detail="Invalid email format.")
 
 
-
 def save_pdf_from_base64(base64_string: str, filename: str, upload_folder="static/resumes") -> str:
     try:
-        print(upload_folder, "upload_folder")
+        os.makedirs(upload_folder, exist_ok=True)
         pdf_path = os.path.join(upload_folder, filename)
+        temp_pdf_path = os.path.join(upload_folder, "compressed_" + filename)
         
-        # Decode Base64 and save initial PDF
+        # Decode Base64 and save the initial PDF
         pdf_bytes = base64.b64decode(base64_string)
         with open(pdf_path, "wb") as pdf_file:
             pdf_file.write(pdf_bytes)
         
-        # Compress the PDF
-        reader = PdfReader(pdf_path)
-        writer = PdfWriter()
+        # Determine the correct Ghostscript executable
+        gs_command = "gs"  # default for Unix-based systems
+        if platform.system() == "Windows":
+            gs_command = shutil.which("gswin64c") or shutil.which("gswin32c")
+        else:
+            gs_command = shutil.which("gs")  # Linux/macOS
+
+        if not gs_command:
+            raise RuntimeError("Ghostscript executable not found. Please ensure it is installed and in PATH.")
         
-        # Copy all pages with compression
-        for page in reader.pages:
-            page.compress_content_streams()  # Compress content streams
-            writer.add_page(page)
+        # Use /screen or /ebook for more aggressive compression (image downscaling)
+        command = [
+            gs_command,
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.4",
+            "-dPDFSETTINGS=/screen",  # Try /screen for maximum reduction (quality may drop)
+            "-dNOPAUSE",
+            "-dQUIET",
+            "-dBATCH",
+            f"-sOutputFile={temp_pdf_path}",
+            pdf_path
+        ]
         
-        # Save compressed PDF (overwrites original)
-        with open(pdf_path, "wb") as compressed_pdf:
-            writer.write(compressed_pdf)
-        
+        subprocess.run(command, check=True)
+        os.replace(temp_pdf_path, pdf_path)
         return pdf_path
-        
+
     except Exception as e:
         raise HTTPException(status_code=200, detail=f"Error while saving or compressing PDF: {str(e)}")
-
 
 
 def save_image_from_base64(base64_string: str, filename: str, upload_folder="static/images") -> str:
@@ -193,9 +207,14 @@ def save_image_from_base64(base64_string: str, filename: str, upload_folder="sta
         
         # Convert to a common format (JPEG) and save
         image = image.convert("RGB")
-        image.save(img_path, format="JPEG", quality=85)
-        
+        # Optional: Resize if image is too large (example: max width/height 1024px)
+        max_size = (1024, 1024)
+        image.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+        # Save as JPEG with compression
+        image.save(img_path, format="JPEG", quality=30, optimize=True)  # quality: 1-95
+
         return img_path
     
     except Exception as e:
-        raise HTTPException(status_code=200, detail=f"Error while saving image:")
+        raise HTTPException(status_code=200, detail=f"Error while saving image: {e}")
