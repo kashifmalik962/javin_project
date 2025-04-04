@@ -67,6 +67,7 @@ try:
     # sub_user_profiles = database["sub_user_profiles"]
     otp_collection = database["otp_collection"]
     admin_collection = database["admin"]
+
     # Activity - Path - Module
     activity_path_collection = database["activity_path_collection"]
     print("Connected to MongoDB successfully!")
@@ -74,7 +75,7 @@ except Exception as e:
     logging.error(f"Failed to connect to MongoDB. Error: {e}")
 
 
-# Custom Exception Handler for Validation Errors (422)
+# Custom Exception Handler for Validation Errors (422))
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = []
