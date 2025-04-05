@@ -14,6 +14,9 @@ from PIL import Image
 import subprocess
 import platform
 import shutil
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Load env
 load_dotenv(find_dotenv(), verbose=True)
@@ -24,6 +27,8 @@ USER_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("USER_ACCESS_TOKEN_EXPIRE_MINUT
 ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASS = os.getenv("EMAIL_HOST_PASS")
 
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY is not set in the environment variables.")
@@ -61,6 +66,51 @@ def send_sms_message(phone, otp_code):
         print(f"SMS sending failed: {e}")
         traceback.print_exc()
         return {"status": "fail", "message": "Failed to send SMS message."}
+
+
+def send_email_message(email, otp_code):
+    # Send email to user with empid and password
+    subject = "WorldClassTechtalent - Successfully recieved OTP"
+    body = f"""
+    <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta http-equiv="X-UA-Compatible" content="IE=edge">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Account Creation</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6;color: #333;
+                    background-color: #f9f9f9; padding: 20px;">
+            <div class="email-container" style="max-width: 600px;margin: 0 auto; background-color: #fff;
+                    padding: 20px;border-radius: 8px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+                <p style="margin-bottom: 16px;">Dear {email},</p>
+                <p style="margin-bottom: 16px;">Your have recieved otp successfully.</p>
+                <p style="margin-bottom: 16px;"><strong>Your OTP: {otp_code}</strong></p>
+                <p style="margin-bottom: 16px;">{otp_code} is your verification code. Do not share it.</p>
+                <p style="margin-bottom: 16px;">Thank you!</p>
+            </div>
+        </body>
+        </html>
+    """
+    
+    # Create message
+    msg = MIMEMultipart()
+    msg['From'] = EMAIL_HOST_USER
+    msg['To'] = email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'html'))
+    try:
+        # Send email
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_HOST_USER, EMAIL_HOST_PASS)
+        server.sendmail(EMAIL_HOST_USER, email, msg.as_string())
+        server.quit()
+    except:
+        pass
+
 
 def encode_base64(password):
     base64_string = base64.b64encode(password.encode("ascii")).decode("ascii")

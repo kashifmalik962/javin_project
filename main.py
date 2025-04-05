@@ -659,11 +659,11 @@ async def register_sub_user(register_sub_user: RegisterSubUser, request:Request)
 
 # Send OTP to the user
 @app.post("/user/send_otp")
-async def send_otp_whatsapp(phone: Send_Otp_Number):
-    if phone.type == "whatsapp":
+async def send_otp_whatsapp(send_otp: Send_Otp):
+    if send_otp.type == "whatsapp":
         try:
             print("IN whatsapp")
-            phone_number = phone.phone.strip()  # Remove spaces
+            phone_number = send_otp.notifier.strip()  # Remove spaces
 
             # Ensure phone number is not empty
             if not phone_number:
@@ -684,7 +684,6 @@ async def send_otp_whatsapp(phone: Send_Otp_Number):
             # Ensure correct local number extraction
             final_number = local_number if not country_code or country_code == "91" else phone_number[len(country_code) + 1:]
 
-            print(final_number, "final_number")
             # Check if phone number exists in the database
             user = await profile_collection.find_one({"phone": final_number, "profile_type": "primary"})
             if not user:
@@ -698,16 +697,20 @@ async def send_otp_whatsapp(phone: Send_Otp_Number):
             otp_code = random.randint(100000, 999999)
 
             otp_data = {
-                "phone": final_number,  # Store only the correct local number
+                "notifier": final_number,  # Store only the correct local number
                 "otp": encode_base64(str(otp_code)),
                 "expires_at": datetime.utcnow() + timedelta(minutes=5)  # OTP valid for 5 minutes
             }
+
+            # Delete old OTP (if exists) to avoid duplicates
+            await otp_collection.delete_one({"notifier": final_number})
 
             # Save to MongoDB
             await otp_collection.insert_one(otp_data)
 
             # Send OTP via WhatsApp
             try:
+                print("sending message")
                 send_whatsapp_message(final_number, otp_code)  # Send only local number
                 return JSONResponse(status_code=200, content={
                     "message": f"OTP sent to {final_number} via WhatsApp",
@@ -719,14 +722,13 @@ async def send_otp_whatsapp(phone: Send_Otp_Number):
         except HTTPException as e:
             raise e  # Rethrow FastAPI exceptions to be handled by the global exception handler
         except Exception as e:
-            raise HTTPException(status_code=200, detail=f"Internal server error.")
+            raise HTTPException(status_code=200, detail=f"Internal server error. {e}")
     
-    if phone.type == "sms":
+    if send_otp.type == "sms":
         try:
             print("IN sms")
             # Validate phone number
-            valid_phone = validation_number(phone.phone)
-
+            valid_phone = validation_number(send_otp.notifier)
             # Check if phone number exists in the database
             number = await profile_collection.find_one({"phone": valid_phone, "profile_type": "primary"})
             if not number:
@@ -738,21 +740,24 @@ async def send_otp_whatsapp(phone: Send_Otp_Number):
             # Generate 6-digit OTP
             otp_code = random.randint(100000, 999999)
 
+            print(otp_code, "otp_code")
             otp_data = {
-                "phone": valid_phone,  
+                "notifier": valid_phone,  
                 "otp": encode_base64(str(otp_code)),  # Store encoded OTP
                 "expires_at": datetime.utcnow() + timedelta(minutes=5)  # Expiry in 5 minutes
             }
 
             # Delete old OTP (if exists) to avoid duplicates
-            await otp_collection.delete_one({"phone": valid_phone})
+            await otp_collection.delete_one({"notifier": valid_phone})
 
             # Insert new OTP
             await otp_collection.insert_one(otp_data)
 
             # Send OTP via SMS
             try:
+                print("send send_sms_message")
                 send_sms_message(valid_phone, otp_code)  # Send only raw OTP
+                print("success send_sms_message")
                 return JSONResponse(status_code=200, content={
                     "message": f"OTP sent to {valid_phone} via SMS",
                     "status_code": 1
@@ -764,24 +769,65 @@ async def send_otp_whatsapp(phone: Send_Otp_Number):
             raise e  # Let FastAPI handle known exceptions
         except Exception as e:
             raise HTTPException(status_code=200, detail=f"Internal server error.")
+    
+    if send_otp.type == "email":
+        try:
+            print("IN Email")
+            print(send_otp.notifier, send_otp.type, "phone.phone, phone.type ++---=+++")
+            # Check if Email exists in the database
+            number = await profile_collection.find_one({"email": send_otp.notifier, "profile_type": "primary"})
+            if not number:
+                raise HTTPException(status_code=200, detail="Email not found.")
+            
+            user_active = number.get("active")
+            if user_active != "true":
+                raise HTTPException(status_code=200, detail="user Inactivated from Admin side.")
+            # Generate 6-digit OTP
+            otp_code = random.randint(100000, 999999)
 
+            otp_data = {
+                "notifier": send_otp.notifier,
+                "otp": encode_base64(str(otp_code)),  # Store encoded OTP
+                "expires_at": datetime.utcnow() + timedelta(minutes=5)  # Expiry in 5 minutes
+            }
+
+            # Delete old OTP (if exists) to avoid duplicates
+            await otp_collection.delete_one({"notifier": send_otp.notifier})
+
+            # Insert new OTP
+            await otp_collection.insert_one(otp_data)
+
+            try:
+                send_email_message(email=send_otp.notifier, otp_code=otp_code)
+            except Exception as e:
+                raise HTTPException(status_code=200, detail=f"Email sending failed: {str(e)}")
+
+            return JSONResponse(status_code=200, content={
+                "message": f"OTP sent to {send_otp.notifier} via Email",
+                "status_code": 1
+            })
+        
+        except HTTPException as e:
+            raise e  # Let FastAPI handle known exceptions
+        except Exception as e:
+            raise HTTPException(status_code=200, detail=f"Internal server error. {e}")
 
 
 # VERIFY - OTP
 @app.post("/user/verify_otp")
 async def verify_otp(verify_otp: Veryfy_OTP):
     try:
-        if not verify_otp.phone or not verify_otp.otp:
+        if not verify_otp.notifier or not verify_otp.otp:
             raise HTTPException(status_code=200, detail="Phone and OTP are required.")
 
         # Validate phone number format
-        phone_number = validation_number(verify_otp.phone)
+        notifier = verify_otp.notifier
 
         # Encode OTP before searching
         encoded_otp = encode_base64(verify_otp.otp)
 
         # ✅ Fetch OTPs and sort manually if needed
-        otp_records = await otp_collection.find({"phone": phone_number}).to_list(None)
+        otp_records = await otp_collection.find({"notifier": notifier}).to_list(None)
 
         # ✅ Ensure correct sorting
         otp_records.sort(key=lambda x: x["expires_at"], reverse=True)  # Latest first
@@ -797,11 +843,16 @@ async def verify_otp(verify_otp: Veryfy_OTP):
             raise HTTPException(status_code=200, detail="OTP has expired.")
 
         # ✅ Remove ONLY the latest OTP after successful verification
-        await otp_collection.delete_many({"phone": phone_number})
+        await otp_collection.delete_many({"notifier": notifier})
 
         # ✅ Fetch user profile (excluding _id)
-        stu_profile = await profile_collection.find_one({"phone": phone_number}, {"_id": 0})
-        
+        stu_profile = await profile_collection.find_one({
+            "$or": [
+                {"email": notifier},
+                {"phone": notifier}
+            ]
+        }, {"_id":0})
+
         token_data = {
             "user_id": stu_profile.get("user_id"),
             "email": stu_profile["email"]

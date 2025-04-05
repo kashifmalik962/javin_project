@@ -59,14 +59,15 @@ class Admin(BaseModel):
 class OTP_Type(str, Enum):
     whatsapp = "whatsapp"
     sms = "sms"
+    email = "email"
 
-class Send_Otp_Number(BaseModel):
-    phone: str
+class Send_Otp(BaseModel):
+    notifier: str
     type: OTP_Type
 
 
 class Veryfy_OTP(BaseModel):
-    phone: str
+    notifier: str
     otp: str
 
 class DownloadResume(BaseModel):
