@@ -40,6 +40,7 @@ templates = Jinja2Templates(directory="templates")
 MONGO_DETAILS = os.getenv("MONGO_URI", "mongodb+srv://kashifmalik2786:BhWKQzVyaxRfzNti@cluster0.ctpzucp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "WTT_DB")
 PORT = int(os.getenv("PORT", 8000))
+URL = os.getenv("URL", "https://wtt-project.onrender.com")
 
 UPLOAD_FOLDER = "static/resumes"
 IMAGE_FOLDER = "static/images"
@@ -288,7 +289,7 @@ async def update_user(user_id: int, request: Request):
             pdf_path = save_pdf_from_base64(base64_resume, filename, upload_folder=UPLOAD_FOLDER)
 
             # Generate public URL
-            file_url = f"https://javin-project.onrender.com/static/resumes/{filename}"
+            file_url = f"{URL}/static/resumes/{filename}"
             profile_updates["resume_name"] = file_url
             update_changes = True
         
@@ -297,7 +298,7 @@ async def update_user(user_id: int, request: Request):
             base64_image = profile_updates.get("picture")
             image_filename = f"{user_id}_profile.jpg"
             img_path = save_image_from_base64(base64_image, image_filename, upload_folder=IMAGE_FOLDER)
-            img_url = f"https://javin-project.onrender.com/static/images/{image_filename}"
+            img_url = f"{URL}/static/images/{image_filename}"
             profile_updates["picture"] = img_url
             update_changes = True
 
