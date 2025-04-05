@@ -69,47 +69,58 @@ def send_sms_message(phone, otp_code):
 
 
 def send_email_message(email, otp_code):
-    # Send email to user with empid and password
-    subject = "WorldClassTechtalent - Successfully recieved OTP"
+    
+    from_email = EMAIL_HOST_USER
+    from_password = EMAIL_HOST_PASS
+
+    # SMTP server configuration
+    smtp_server = "smtpout.secureserver.net"
+    smtp_port = 587  # TLS port
+
+    subject = "WorldClassTechtalent - Successfully received OTP"
     body = f"""
     <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta http-equiv="X-UA-Compatible" content="IE=edge">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Account Creation</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6;color: #333;
-                    background-color: #f9f9f9; padding: 20px;">
-            <div class="email-container" style="max-width: 600px;margin: 0 auto; background-color: #fff;
-                    padding: 20px;border-radius: 8px;
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Account Creation</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;
+                background-color: #f9f9f9; padding: 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #fff;
+                    padding: 20px; border-radius: 8px;
                     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
-                <p style="margin-bottom: 16px;">Dear {email},</p>
-                <p style="margin-bottom: 16px;">Your have recieved otp successfully.</p>
-                <p style="margin-bottom: 16px;"><strong>Your OTP: {otp_code}</strong></p>
-                <p style="margin-bottom: 16px;">{otp_code} is your verification code. Do not share it.</p>
-                <p style="margin-bottom: 16px;">Thank you!</p>
-            </div>
-        </body>
-        </html>
+            <p>Dear {email},</p>
+            <p>You have received the OTP successfully.</p>
+            <p><strong>Your OTP: {otp_code}</strong></p>
+            <p>{otp_code} is your verification code. Do not share it.</p>
+            <p>Thank you!</p>
+        </div>
+    </body>
+    </html>
     """
-    
-    # Create message
-    msg = MIMEMultipart()
-    msg['From'] = EMAIL_HOST_USER
-    msg['To'] = email
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'html'))
+
     try:
-        # Send email
-        server = smtplib.SMTP("smtp.gmail.com", 587)
+        # Setup message
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = email
+
+        msg.attach(MIMEText(body, "html"))
+
+        # Connect and send email
+        server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
-        server.login(EMAIL_HOST_USER, EMAIL_HOST_PASS)
-        server.sendmail(EMAIL_HOST_USER, email, msg.as_string())
+        server.login(from_email, from_password)
+        server.sendmail(from_email, email, msg.as_string())
         server.quit()
-    except:
-        pass
+
+        print(f"OTP sent successfully to {email}")
+    except Exception as e:
+        print(f"Error sending email: {e}")
 
 
 def encode_base64(password):
